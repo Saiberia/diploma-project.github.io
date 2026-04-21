@@ -1,28 +1,36 @@
-name: Deploy to Server
+name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [ main, master ]
+    branches: ["main"] # <-- Здесь имя вашей основной ветки
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Deploy to server
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ secrets.SERVER_HOST }}
-        username: ${{ secrets.SERVER_USER }}
-        key: ${{ secrets.SSH_PRIVATE_KEY }}
-        port: 22
-        script: |
-          cd ~/diploma-project
-          echo "Pulling latest changes..."
-          git pull origin main
-          echo "Rebuilding containers..."
-          docker-compose down
-          docker-compose up -d --build
-          echo "Cleaning up..."
-          docker system prune -f
-          echo "✅ Deployment completed at $(date)"
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18' # <-- Версия Node.js, если нужна
+          
+      - name: Install Dependencies
+        run: npm ci # <-- Команда для установки зависимостей
+          
+      - name: Build Project
+        run: npm run build # <-- Команда для сборки проекта
+        
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './dist' # <-- ПАПКА, КУДА СОБИРАЕТСЯ ПРОЕКТ (у вас может быть 'build')
+          
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
