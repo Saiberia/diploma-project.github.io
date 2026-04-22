@@ -1,4 +1,5 @@
 import express from 'express';
+import aiEngine from '../services/aiEngine.js';
 
 const router = express.Router();
 
@@ -7,11 +8,11 @@ const orders = [];
 
 router.post('/create', (req, res) => {
   const { productIds, totalPrice, paymentMethod } = req.body;
-  
+
   if (!productIds || !totalPrice) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
-  
+
   const order = {
     id: 'order_' + Math.random().toString(36).substr(2, 9),
     productIds,
@@ -21,9 +22,16 @@ router.post('/create', (req, res) => {
     createdAt: new Date(),
     updatedAt: new Date()
   };
-  
+
   orders.push(order);
-  
+
+  // Фиксируем продажу в движке прогнозирования спроса
+  for (const item of Array.isArray(productIds) ? productIds : [productIds]) {
+    const productId = typeof item === 'object' ? item.productId || item.id : String(item);
+    const quantity = typeof item === 'object' ? (item.quantity || 1) : 1;
+    aiEngine.recordSale(productId, quantity);
+  }
+
   res.json({ order, message: 'Order created successfully' });
 });
 

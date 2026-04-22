@@ -33,6 +33,33 @@ class NovaAIEngine {
     // Кэш для быстрого доступа
     this.cache = new Map();
     this.cacheExpiry = 5 * 60 * 1000; // 5 минут
+
+    this._seedDemandHistory();
+  }
+
+  // Генерируем 30 дней синтетических продаж чтобы алгоритм имел данные с первого запуска
+  _seedDemandHistory() {
+    const products = ['steam-100', 'steam-50', 'steam-20', 'valorant-bp', 'xbox-pass'];
+    const baseDemands = { 'steam-100': 8, 'steam-50': 14, 'steam-20': 22, 'valorant-bp': 11, 'xbox-pass': 7 };
+    const now = Date.now();
+
+    for (const productId of products) {
+      const base = baseDemands[productId] || 10;
+      const history = [];
+      for (let d = 29; d >= 0; d--) {
+        const date = new Date(now - d * 86400000);
+        const dayOfWeek = date.getDay();
+        const weekendBoost = (dayOfWeek === 0 || dayOfWeek === 6) ? 1.25 : 1.0;
+        // лёгкий восходящий тренд ~2% в неделю
+        const trendBoost = 1 + ((29 - d) / 29) * 0.08;
+        const noise = 0.8 + Math.random() * 0.4;
+        history.push({
+          date: date.toISOString().split('T')[0],
+          quantity: Math.max(1, Math.round(base * weekendBoost * trendBoost * noise))
+        });
+      }
+      this.demandHistory.set(productId, history);
+    }
   }
 
   // ==========================================
@@ -511,73 +538,102 @@ class NovaAIEngine {
   // ==========================================
   // 📈 ПРОГНОЗИРОВАНИЕ СПРОСА
   // ==========================================
-  
+
   /**
-   * Прогноз спроса на товар
+   * Записывает факт продажи — источник правды для прогноза
+   */
+  recordSale(productId, quantity = 1, date = new Date()) {
+    const history = this.demandHistory.get(productId) || [];
+    const dateStr = (date instanceof Date ? date : new Date(date)).toISOString().split('T')[0];
+    const existing = history.find(e => e.date === dateStr);
+    if (existing) {
+      existing.quantity += quantity;
+    } else {
+      history.push({ date: dateStr, quantity });
+      // держим не больше 90 дней, старое неважно
+      if (history.length > 90) history.splice(0, history.length - 90);
+    }
+    this.demandHistory.set(productId, history);
+  }
+
+  /**
+   * Прогноз спроса — скользящее среднее 7 дней × тренд × сезонность
    */
   forecastDemand(productId, historicalData = [], days = 7) {
-    // Анализ исторических данных
     const productHistory = this.demandHistory.get(productId) || [];
-    const allData = [...productHistory, ...historicalData];
-    
-    // Базовый прогноз
-    const avgDailyDemand = allData.length > 0 
-      ? allData.reduce((sum, d) => sum + (d.quantity || 1), 0) / Math.max(1, allData.length)
-      : 10; // Дефолт
-    
-    // Факторы
+    // Внешние данные (если переданы) мержим по дате
+    const merged = [...productHistory];
+    for (const ext of historicalData) {
+      const dateStr = ext.date || new Date().toISOString().split('T')[0];
+      const idx = merged.findIndex(e => e.date === dateStr);
+      if (idx >= 0) merged[idx].quantity += (ext.quantity || 0);
+      else merged.push({ date: dateStr, quantity: ext.quantity || 0 });
+    }
+    merged.sort((a, b) => a.date.localeCompare(b.date));
+
+    // 7-дневное скользящее среднее по последним данным
+    const window7 = merged.slice(-7);
+    const avg7 = window7.length > 0
+      ? window7.reduce((s, d) => s + (d.quantity || 0), 0) / window7.length
+      : 10;
+
+    // Тренд: последние 7 vs предыдущие 7
+    const trendMultiplier = this._calcTrend(merged);
     const seasonalMultiplier = this.getSeasonalFactor();
-    const trendMultiplier = this.calculateTrend(allData);
-    
+
+    // Базовый прогноз дня = avg7 × тренд × сезонность
+    const baseForecast = avg7 * trendMultiplier * seasonalMultiplier;
+
     const forecast = [];
     const now = new Date();
-    
+
     for (let i = 0; i < days; i++) {
-      const forecastDate = new Date(now.getTime() + i * 24 * 60 * 60 * 1000);
+      const forecastDate = new Date(now.getTime() + i * 86400000);
       const dayOfWeek = forecastDate.getDay();
       const weekendBoost = (dayOfWeek === 0 || dayOfWeek === 6) ? 1.2 : 1.0;
-      
-      const predictedDemand = Math.round(
-        avgDailyDemand * seasonalMultiplier * trendMultiplier * weekendBoost
-      );
-      
+
+      const predicted = Math.max(1, Math.round(baseForecast * weekendBoost));
+      // Доверие падает чем дальше прогноз и чем меньше данных
+      const dataFactor = Math.min(1, merged.length / 14);
+      const confidence = parseFloat(Math.max(0.5, (0.95 - i * 0.04) * dataFactor).toFixed(2));
+
       forecast.push({
         date: forecastDate.toISOString().split('T')[0],
         dayName: ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'][dayOfWeek],
-        predictedDemand,
-        confidence: Math.max(0.6, 0.95 - i * 0.05),
-        lowerBound: Math.round(predictedDemand * 0.8),
-        upperBound: Math.round(predictedDemand * 1.2)
+        predictedDemand: predicted,
+        confidence,
+        lowerBound: Math.round(predicted * (2 - confidence)),
+        upperBound: Math.round(predicted * (1 + (1 - confidence) + 0.15))
       });
     }
-    
+
     return {
       productId,
+      dataPoints: merged.length,
       forecast,
       summary: {
         totalPredicted: forecast.reduce((sum, f) => sum + f.predictedDemand, 0),
-        avgDaily: Math.round(avgDailyDemand * seasonalMultiplier * trendMultiplier),
+        avgDaily: Math.round(baseForecast),
+        avg7DaySales: parseFloat(avg7.toFixed(1)),
+        trend: trendMultiplier > 1.05 ? 'rising' : trendMultiplier < 0.95 ? 'falling' : 'stable',
         peakDay: forecast.reduce((max, f) => f.predictedDemand > max.predictedDemand ? f : max, forecast[0]),
-        recommendation: this.getDemandRecommendation(avgDailyDemand, trendMultiplier)
+        recommendation: this.getDemandRecommendation(avg7, trendMultiplier)
       }
     };
   }
-  
-  calculateTrend(data) {
-    if (data.length < 2) return 1.0;
-    
-    // Простой линейный тренд
-    const recentAvg = data.slice(-7).reduce((s, d) => s + (d.quantity || 1), 0) / 7;
-    const olderAvg = data.slice(0, 7).reduce((s, d) => s + (d.quantity || 1), 0) / 7;
-    
-    if (olderAvg === 0) return 1.0;
-    return Math.min(1.5, Math.max(0.5, recentAvg / olderAvg));
+
+  _calcTrend(data) {
+    if (data.length < 8) return 1.0;
+    const recent = data.slice(-7).reduce((s, d) => s + (d.quantity || 0), 0) / 7;
+    const older = data.slice(-14, -7).reduce((s, d) => s + (d.quantity || 0), 0) / 7;
+    if (older === 0) return 1.0;
+    return Math.min(2.0, Math.max(0.3, recent / older));
   }
-  
-  getDemandRecommendation(avgDemand, trend) {
-    if (trend > 1.2) return 'Спрос растёт - рассмотрите увеличение запасов';
-    if (trend < 0.8) return 'Спрос падает - рассмотрите скидки';
-    if (avgDemand > 50) return 'Стабильно высокий спрос';
+
+  getDemandRecommendation(avg7, trend) {
+    if (trend > 1.2) return 'Спрос растёт — рассмотрите увеличение запасов';
+    if (trend < 0.8) return 'Спрос падает — рассмотрите скидки';
+    if (avg7 > 50) return 'Стабильно высокий спрос';
     return 'Нормальный уровень спроса';
   }
 

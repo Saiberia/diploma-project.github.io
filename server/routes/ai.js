@@ -1,5 +1,7 @@
 import express from 'express';
 import aiEngine from '../services/aiEngine.js';
+import recommendationService from '../services/recommendationService.js';
+import products from '../data/products.js';
 
 const router = express.Router();
 
@@ -33,78 +35,54 @@ router.post('/track', (req, res) => {
 });
 
 // ==========================================
-// 🎯 ПЕРСОНАЛИЗИРОВАННЫЕ РЕКОМЕНДАЦИИ
+// 🎯 РЕКОМЕНДАЦИИ (content-based filtering)
 // ==========================================
 
 /**
- * GET /api/ai/recommendations/:userId
- * Получение персонализированных рекомендаций
+ * POST /api/ai/recommendations/personalized
+ * Персональные рекомендации на основе истории
+ * Body: { viewedIds: number[], purchasedIds: number[], limit?: number }
  */
-router.get('/recommendations/:userId', async (req, res) => {
+router.post('/recommendations/personalized', (req, res) => {
   try {
-    const { userId } = req.params;
-    const { limit = 6, algorithm = 'hybrid' } = req.query;
-    
-    // Моковые продукты (в реальности из БД)
-    const products = [
-      { id: 1, name: 'Пополнение Steam', category: 'steam', price: 100, rating: 4.9, reviews: 12840, badge: 'popular' },
-      { id: 2, name: 'V-Bucks 1000', category: 'items', price: 799, rating: 4.8, reviews: 3200, badge: 'hit' },
-      { id: 3, name: "Baldur's Gate 3", category: 'games', price: 1999, rating: 4.9, reviews: 8900, badge: 'new' },
-      { id: 4, name: 'Valorant Points 1000', category: 'items', price: 599, rating: 4.7, reviews: 2100 },
-      { id: 5, name: 'CS2 Prime Status', category: 'games', price: 1199, rating: 4.8, reviews: 5600, badge: 'popular' },
-      { id: 6, name: 'Robux 1000', category: 'items', price: 749, rating: 4.6, reviews: 4200 },
-      { id: 7, name: 'Elden Ring', category: 'games', price: 2499, rating: 4.9, reviews: 15000 },
-      { id: 8, name: 'Genshin Impact Кристаллы', category: 'items', price: 1299, rating: 4.5, reviews: 2800 },
-      { id: 9, name: 'Смена региона Steam', category: 'steam', price: 277, rating: 4.9, reviews: 8400, badge: 'hit' },
-      { id: 10, name: 'Dota 2 Battle Pass', category: 'moba', price: 799, rating: 4.7, reviews: 3500 }
-    ];
-    
-    const recommendations = await aiEngine.getRecommendations(
-      userId, 
-      products,
-      { limit: parseInt(limit), algorithm }
+    const { viewedIds = [], purchasedIds = [], limit = 4 } = req.body;
+    const recs = recommendationService.getPersonalized(
+      viewedIds, purchasedIds, products, parseInt(limit)
     );
-    
-    res.json({
-      userId,
-      recommendations,
-      algorithm,
-      generatedAt: new Date(),
-      modelVersion: aiEngine.models.recommendation.version
-    });
+    res.json({ recommendations: recs, algorithm: 'content-based', generatedAt: new Date() });
   } catch (error) {
-    console.error('Recommendations error:', error);
+    console.error('Personalized recs error:', error);
     res.status(500).json({ error: 'Failed to generate recommendations' });
   }
 });
 
 /**
- * GET /api/ai/recommendations
- * Рекомендации без userId (популярные)
+ * GET /api/ai/recommendations/similar/:productId
+ * Похожие товары для страницы продукта
  */
-router.get('/recommendations', async (req, res) => {
+router.get('/recommendations/similar/:productId', (req, res) => {
   try {
-    const products = [
-      { id: 1, name: 'Пополнение Steam', category: 'steam', price: 100, rating: 4.9, reviews: 12840, badge: 'popular' },
-      { id: 2, name: 'V-Bucks 1000', category: 'items', price: 799, rating: 4.8, reviews: 3200, badge: 'hit' },
-      { id: 3, name: "Baldur's Gate 3", category: 'games', price: 1999, rating: 4.9, reviews: 8900, badge: 'new' },
-      { id: 5, name: 'CS2 Prime Status', category: 'games', price: 1199, rating: 4.8, reviews: 5600, badge: 'popular' },
-      { id: 9, name: 'Смена региона Steam', category: 'steam', price: 277, rating: 4.9, reviews: 8400, badge: 'hit' }
-    ];
-    
-    const recommendations = products.map(p => ({
-      ...p,
-      recommendationReason: 'Популярно среди покупателей',
-      confidence: 0.85
-    }));
-    
-    res.json({
-      recommendations,
-      type: 'popular',
-      generatedAt: new Date()
-    });
+    const productId = parseInt(req.params.productId);
+    const limit     = parseInt(req.query.limit) || 4;
+    const recs = recommendationService.getSimilarProducts(productId, products, limit);
+    res.json({ recommendations: recs, algorithm: 'cosine-similarity', generatedAt: new Date() });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to get recommendations' });
+    console.error('Similar products error:', error);
+    res.status(500).json({ error: 'Failed to get similar products' });
+  }
+});
+
+/**
+ * GET /api/ai/recommendations/popular
+ * Популярные товары (без истории пользователя)
+ */
+router.get('/recommendations/popular', (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 4;
+    const recs = recommendationService.getPersonalized([], [], products, limit);
+    res.json({ recommendations: recs, algorithm: 'popularity', generatedAt: new Date() });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get popular products' });
   }
 });
 

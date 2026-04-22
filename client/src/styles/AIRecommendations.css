@@ -180,6 +180,79 @@
   transform: scale(0.98);
 }
 
+/* Skeleton loader */
+.rec-skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.5rem;
+}
+
+.rec-skeleton {
+  height: 280px;
+  background: linear-gradient(90deg, var(--surface) 25%, var(--surface-light) 50%, var(--surface) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.4s infinite;
+  border-radius: 0.8rem;
+}
+
+@keyframes skeleton-loading {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Card image */
+.rec-image-wrap {
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  background: var(--surface-light);
+}
+
+.rec-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Tag badge */
+.rec-tag {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  background: var(--accent);
+  color: var(--background);
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.3rem;
+  text-transform: uppercase;
+}
+
+/* Meta row */
+.rec-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+/* Algorithm note */
+.rec-algorithm-note {
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 1.5rem;
+  opacity: 0.7;
+}
+
+/* Clickable card */
+.rec-card {
+  cursor: pointer;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .ai-recommendations {
