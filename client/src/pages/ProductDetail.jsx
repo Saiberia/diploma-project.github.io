@@ -1,5 +1,6 @@
 import { useParams, Link } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import AIRecommendations, { trackProductView } from '../components/AIRecommendations';
 
 function ProductDetail({ products, onAddToCart }) {
   const { id } = useParams();
@@ -7,6 +8,10 @@ function ProductDetail({ products, onAddToCart }) {
   const [quantity, setQuantity] = useState(1);
   const [added, setAdded] = useState(false);
   const [selectedTab, setSelectedTab] = useState('description');
+
+  useEffect(() => {
+    if (product) trackProductView(product.id);
+  }, [product?.id]);
 
   if (!product) {
     return (
@@ -30,8 +35,6 @@ function ProductDetail({ products, onAddToCart }) {
     setAdded(true);
     setTimeout(() => setAdded(false), 2000);
   };
-
-  const relatedProducts = products.filter(p => p.category === product.category && p.id !== product.id).slice(0, 4);
 
   return (
     <div className="product-detail-page">
@@ -265,27 +268,10 @@ function ProductDetail({ products, onAddToCart }) {
           </div>
         </div>
 
-        {/* Related Products */}
-        {relatedProducts.length > 0 && (
-          <div className="related-products-section">
-            <h2>Похожие товары</h2>
-            <div className="related-products-grid">
-              {relatedProducts.map(prod => (
-                <Link key={prod.id} to={`/product/${prod.id}`} className="related-product-card">
-                  <div className="related-product-image">
-                    <img src={prod.image} alt={prod.name} />
-                  </div>
-                  <h4>{prod.name}</h4>
-                  <p className="related-product-price">{prod.price}₽</p>
-                  <div className="related-product-rating">
-                    <span className="stars">{'★'.repeat(Math.round(prod.rating))}</span>
-                    <span>({prod.reviews})</span>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
+        <AIRecommendations
+          currentProductId={product.id}
+          title="Похожие товары"
+        />
       </div>
     </div>
   );

@@ -18,11 +18,12 @@ function Catalog({ products, loading, onAddToCart }) {
   }, [categoryFromUrl]);
 
   const categories = [
-    { id: 'all', name: 'Все товары', icon: '🎮' },
-    { id: 'steam', name: 'Steam', icon: '💳' },
-    { id: 'games', name: 'Игры', icon: '🎯' },
-    { id: 'items', name: 'Предметы', icon: '⚔️' },
-    { id: 'moba', name: 'MOBA', icon: '👹' }
+    { id: 'all',          name: 'Все товары', icon: '🎮' },
+    { id: 'steam',        name: 'Steam',       icon: '💳' },
+    { id: 'games',        name: 'Игры',        icon: '🎯' },
+    { id: 'items',        name: 'Предметы',    icon: '⚔️' },
+    { id: 'moba',         name: 'MOBA',        icon: '👹' },
+    { id: 'subscription', name: 'Подписки',    icon: '🎫' }
   ];
 
   // Картинки для товаров
@@ -204,6 +205,7 @@ function Catalog({ products, loading, onAddToCart }) {
                             {product.category === 'games' && '🎮'}
                             {product.category === 'items' && '⚔️'}
                             {product.category === 'moba' && '👹'}
+                            {product.category === 'subscription' && '🎫'}
                           </span>
                         </div>
                       </div>

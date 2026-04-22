@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import '../styles/Checkout.css';
 
 function Checkout({ cartItems, user }) {
   const navigate = useNavigate();

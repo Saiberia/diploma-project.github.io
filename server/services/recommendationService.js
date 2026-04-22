@@ -1,81 +1,172 @@
-/**
- * Recommendation Engine Service
- * Uses collaborative filtering and content-based recommendation
- */
-
 class RecommendationService {
   constructor() {
-    this.userProfiles = new Map();
-    this.productFeatures = new Map();
+    this.vocabulary = [];
+    this.productVectors = new Map();
+    this.initialized = false;
   }
 
-  /**
-   * Generate personalized recommendations for a user
-   * @param {string} userId - User ID
-   * @param {array} purchaseHistory - User's purchase history
-   * @param {array} products - All available products
-   * @returns {array} Recommended products with confidence scores
-   */
-  async generateRecommendations(userId, purchaseHistory, products) {
-    try {
-      // Analyze user preferences from purchase history
-      const userProfile = this.analyzeUserProfile(purchaseHistory);
-      
-      // Score each product based on user profile
-      const scoredProducts = products.map(product => ({
-        ...product,
-        score: this.calculateSimilarityScore(userProfile, product),
-        confidence: Math.random() * 0.2 + 0.7 // 0.7-0.9
-      }));
+  // ── Инициализация: строим векторы для всех продуктов ──────────────────────
 
-      // Return top N recommendations
-      return scoredProducts
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 5)
-        .map(({ score, ...product }) => product);
-    } catch (error) {
-      console.error('Recommendation error:', error);
-      return [];
+  initialize(products) {
+    this.vocabulary = this._buildVocabulary(products);
+    for (const p of products) {
+      this.productVectors.set(p.id, this._buildVector(p));
     }
+    this.initialized = true;
   }
 
-  analyzeUserProfile(purchaseHistory) {
-    const profile = {
-      categories: {},
-      priceRange: { min: Infinity, max: 0 },
-      avgPrice: 0,
-      totalSpent: 0
-    };
+  _ensureInitialized(products) {
+    if (!this.initialized) this.initialize(products);
+  }
 
-    purchaseHistory.forEach(item => {
-      profile.categories[item.category] = (profile.categories[item.category] || 0) + 1;
-      profile.priceRange.min = Math.min(profile.priceRange.min, item.price);
-      profile.priceRange.max = Math.max(profile.priceRange.max, item.price);
-      profile.totalSpent += item.price;
+  // ── Построение словаря признаков ──────────────────────────────────────────
+
+  _buildVocabulary(products) {
+    const vocab = new Set();
+    for (const p of products) {
+      vocab.add(`cat:${p.category}`);
+      vocab.add(`genre:${p.genre}`);
+      vocab.add(`price:${this._priceBucket(p.price)}`);
+      for (const tag of (p.tags || [])) {
+        vocab.add(`tag:${tag}`);
+      }
+    }
+    return Array.from(vocab).sort();
+  }
+
+  _priceBucket(price) {
+    if (price === 0)      return 'free';
+    if (price < 500)      return 'low';
+    if (price < 1500)     return 'mid';
+    return 'high';
+  }
+
+  // ── Построение признакового вектора продукта ──────────────────────────────
+
+  _buildVector(product) {
+    return this.vocabulary.map(feature => {
+      if (feature === `cat:${product.category}`)   return 1.0;
+      if (feature === `genre:${product.genre}`)     return 1.0;
+      if (feature === `price:${this._priceBucket(product.price)}`) return 0.5;
+      if (feature.startsWith('tag:')) {
+        const tag = feature.slice(4);
+        return (product.tags || []).includes(tag) ? 1.0 : 0;
+      }
+      return 0;
     });
-
-    profile.avgPrice = profile.totalSpent / (purchaseHistory.length || 1);
-    return profile;
   }
 
-  calculateSimilarityScore(userProfile, product) {
-    let score = 0;
+  // ── Косинусное сходство ───────────────────────────────────────────────────
 
-    // Category match
-    if (userProfile.categories[product.category]) {
-      score += 40;
+  _cosine(v1, v2) {
+    let dot = 0, mag1 = 0, mag2 = 0;
+    for (let i = 0; i < v1.length; i++) {
+      dot  += v1[i] * v2[i];
+      mag1 += v1[i] * v1[i];
+      mag2 += v2[i] * v2[i];
+    }
+    return mag1 && mag2 ? dot / (Math.sqrt(mag1) * Math.sqrt(mag2)) : 0;
+  }
+
+  // ── Похожие товары (content-based) ───────────────────────────────────────
+
+  getSimilarProducts(productId, products, n = 4) {
+    this._ensureInitialized(products);
+
+    const targetVec = this.productVectors.get(productId);
+    if (!targetVec) return this._topRated(products, n);
+
+    const source = products.find(p => p.id === productId);
+
+    return products
+      .filter(p => p.id !== productId)
+      .map(p => ({
+        ...p,
+        similarity: this._cosine(targetVec, this.productVectors.get(p.id)),
+      }))
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, n)
+      .map(({ similarity, ...p }) => ({
+        ...p,
+        confidence: Math.min(Math.round(similarity * 110), 99),
+        reason:     this._similarReason(source, p),
+      }));
+  }
+
+  // ── Персональные рекомендации (история просмотров/покупок) ───────────────
+
+  getPersonalized(viewedIds, purchasedIds, products, n = 4) {
+    this._ensureInitialized(products);
+
+    const seenIds = new Set([...viewedIds, ...purchasedIds]);
+
+    if (seenIds.size === 0) {
+      return this._topRated(products, n).map(p => ({
+        ...p,
+        confidence: 75,
+        reason: 'Популярный товар в магазине',
+      }));
     }
 
-    // Price range match
-    if (product.price >= userProfile.priceRange.min && 
-        product.price <= userProfile.priceRange.max) {
-      score += 30;
+    // Взвешенный вектор предпочтений: покупки важнее просмотров
+    const userVec = new Array(this.vocabulary.length).fill(0);
+    let totalWeight = 0;
+
+    for (const id of purchasedIds) {
+      const v = this.productVectors.get(id);
+      if (v) { v.forEach((val, i) => { userVec[i] += val * 2; }); totalWeight += 2; }
     }
+    for (const id of viewedIds) {
+      if (!purchasedIds.includes(id)) {
+        const v = this.productVectors.get(id);
+        if (v) { v.forEach((val, i) => { userVec[i] += val; }); totalWeight += 1; }
+      }
+    }
+    if (totalWeight > 0) userVec.forEach((_, i) => { userVec[i] /= totalWeight; });
 
-    // Rating factor
-    score += (product.rating || 4) * 5;
+    return products
+      .filter(p => !seenIds.has(p.id))
+      .map(p => ({
+        ...p,
+        similarity: this._cosine(userVec, this.productVectors.get(p.id)),
+      }))
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, n)
+      .map(({ similarity, ...p }) => ({
+        ...p,
+        confidence: Math.min(Math.round(similarity * 120), 99),
+        reason:     this._personalReason(p, viewedIds, purchasedIds, products),
+      }));
+  }
 
-    return score;
+  // ── Вспомогательные методы ────────────────────────────────────────────────
+
+  _topRated(products, n) {
+    return [...products]
+      .sort((a, b) => b.rating * Math.log(b.reviews + 1) - a.rating * Math.log(a.reviews + 1))
+      .slice(0, n);
+  }
+
+  _similarReason(source, target) {
+    if (!source) return 'Похожий товар';
+    if (source.genre === target.genre) return `Жанр: ${target.genre}`;
+    const shared = (source.tags || []).filter(t => (target.tags || []).includes(t));
+    if (shared.length) return `Общий тег: ${shared[0]}`;
+    if (source.category === target.category) return `Категория: ${target.category}`;
+    return 'Часто покупают вместе';
+  }
+
+  _personalReason(product, viewedIds, purchasedIds, products) {
+    const interacted = [...purchasedIds, ...viewedIds]
+      .map(id => products.find(p => p.id === id))
+      .filter(Boolean);
+
+    for (const p of interacted) {
+      if (p.genre === product.genre) return `Вам нравится жанр «${product.genre}»`;
+      const shared = (p.tags || []).filter(t => (product.tags || []).includes(t));
+      if (shared.length) return `На основе интереса к «${shared[0]}»`;
+    }
+    return 'На основе ваших предпочтений';
   }
 }
 
