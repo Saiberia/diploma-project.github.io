@@ -3609,6 +3609,13 @@ body {
   color: var(--text);
 }
 
+/* Обертка для графиков в админке */
+.chart-placeholder {
+  position: relative;
+  padding: 0.5rem 0 2rem;
+  min-height: 180px;
+}
+
 /* Bar Chart */
 .bar-chart {
   display: flex;
@@ -7728,6 +7735,18 @@ body {
   transform: translateY(-50%);
   color: var(--text-secondary);
   font-size: 0.85rem;
+  pointer-events: none;
+}
+
+/* Hide native number input spinners (дубликат стрелочек выглядел криво на темной теме) */
+.price-input-wrap input[type="number"]::-webkit-outer-spin-button,
+.price-input-wrap input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.price-input-wrap input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
 }
 
 .price-separator {

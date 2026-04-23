@@ -101,20 +101,7 @@ router.post('/search', (req, res) => {
     if (!query) {
       return res.status(400).json({ error: 'Query required' });
     }
-    
-    const products = [
-      { id: 1, name: 'Пополнение Steam кошелька', category: 'steam', price: 100, rating: 4.9, description: 'Моментальное пополнение баланса Steam' },
-      { id: 2, name: 'V-Bucks 1000 (Fortnite)', category: 'items', price: 799, rating: 4.8, description: 'Валюта для Fortnite' },
-      { id: 3, name: "Baldur's Gate 3", category: 'games', price: 1999, rating: 4.9, description: 'Эпическая RPG' },
-      { id: 4, name: 'Valorant Points 1000', category: 'items', price: 599, rating: 4.7, description: 'Очки для Valorant' },
-      { id: 5, name: 'CS2 Prime Status', category: 'games', price: 1199, rating: 4.8, description: 'Counter-Strike 2 Prime' },
-      { id: 6, name: 'Robux 1000 (Roblox)', category: 'items', price: 749, rating: 4.6, description: 'Валюта Roblox' },
-      { id: 7, name: 'Elden Ring', category: 'games', price: 2499, rating: 4.9, description: 'Action RPG от FromSoftware' },
-      { id: 8, name: 'Genshin Impact Кристаллы', category: 'items', price: 1299, rating: 4.5, description: 'Кристаллы Genesis' },
-      { id: 9, name: 'Смена региона Steam', category: 'steam', price: 277, rating: 4.9, description: 'Смена региона на Казахстан' },
-      { id: 10, name: 'Dota 2 Battle Pass', category: 'moba', price: 799, rating: 4.7, description: 'Боевой пропуск Dota 2' }
-    ];
-    
+
     const searchResults = aiEngine.smartSearch(query, products, { limit });
     
     res.json({

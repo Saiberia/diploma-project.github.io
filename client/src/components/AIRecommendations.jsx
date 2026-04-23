@@ -129,15 +129,18 @@ function AIRecommendations({ currentProductId = null, title = 'AI Рекомен
           >
             {rec.badge && <span className="rec-tag">{rec.badge}</span>}
 
-            <div className="rec-confidence">
-              <div className="confidence-bar">
-                <div
-                  className="confidence-fill"
-                  style={{ width: `${rec.confidence || 75}%` }}
-                />
-              </div>
-              <span className="confidence-text">{rec.confidence || 75}% совпадение</span>
-            </div>
+            {(() => {
+              const c = rec.confidence || 75;
+              const level = c >= 80 ? 'high' : c >= 60 ? 'medium' : 'low';
+              return (
+                <div className={`rec-confidence conf-${level}`}>
+                  <div className="confidence-bar">
+                    <div className="confidence-fill" style={{ width: `${c}%` }} />
+                  </div>
+                  <span className="confidence-text">{c}% совпадение</span>
+                </div>
+              );
+            })()}
 
             <div className="rec-image-wrap">
               {rec.image

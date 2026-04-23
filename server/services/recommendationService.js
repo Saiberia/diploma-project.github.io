@@ -147,12 +147,29 @@ class RecommendationService {
       .slice(0, n);
   }
 
+  _prettyGenre(g) {
+    const map = {
+      rpg: 'RPG', action: 'Action', shooter: 'шутеры', strategy: 'стратегии',
+      moba: 'MOBA', adventure: 'приключения', simulation: 'симуляторы',
+      racing: 'гонки', sports: 'спорт', horror: 'хорроры', indie: 'инди'
+    };
+    return map[g] || g;
+  }
+
+  _prettyCategory(c) {
+    const map = {
+      steam: 'Steam', games: 'игры', items: 'внутриигровые предметы',
+      moba: 'MOBA', subscription: 'подписки'
+    };
+    return map[c] || c;
+  }
+
   _similarReason(source, target) {
     if (!source) return 'Похожий товар';
-    if (source.genre === target.genre) return `Жанр: ${target.genre}`;
+    if (source.genre === target.genre) return `Похожий жанр — ${this._prettyGenre(target.genre)}`;
     const shared = (source.tags || []).filter(t => (target.tags || []).includes(t));
-    if (shared.length) return `Общий тег: ${shared[0]}`;
-    if (source.category === target.category) return `Категория: ${target.category}`;
+    if (shared.length) return `Та же тематика: ${shared[0]}`;
+    if (source.category === target.category) return `Та же категория — ${this._prettyCategory(target.category)}`;
     return 'Часто покупают вместе';
   }
 
@@ -162,9 +179,9 @@ class RecommendationService {
       .filter(Boolean);
 
     for (const p of interacted) {
-      if (p.genre === product.genre) return `Вам нравится жанр «${product.genre}»`;
+      if (p.genre === product.genre) return `Вам нравится жанр ${this._prettyGenre(product.genre)}`;
       const shared = (p.tags || []).filter(t => (product.tags || []).includes(t));
-      if (shared.length) return `На основе интереса к «${shared[0]}»`;
+      if (shared.length) return `Похоже на то, что вы смотрели: ${shared[0]}`;
     }
     return 'На основе ваших предпочтений';
   }

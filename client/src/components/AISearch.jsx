@@ -1,87 +1,74 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import '../styles/AISearch.css';
 
-/**
- * AI Поиск в стиле yepshop
- * Простой и функциональный
- */
+const CATEGORY_ICONS = {
+  steam: '💳',
+  games: '🎮',
+  items: '⚔️',
+  moba: '👹',
+  subscription: '🎫'
+};
+
+const INTENT_LABELS = {
+  buy: { icon: '🛒', text: 'Хочешь купить' },
+  cheap: { icon: '💰', text: 'Ищешь подешевле' },
+  popular: { icon: '🔥', text: 'Показываю популярные' },
+  new: { icon: '✨', text: 'Показываю новинки' }
+};
+
 function AISearch() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
+  const [searchData, setSearchData] = useState(null);
   const [isSearching, setIsSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
+  const debounceRef = useRef(null);
+  const abortRef = useRef(null);
 
-  const mockProducts = [
-    { id: 1, name: 'Пополнение Steam кошелька', category: 'steam', price: 100, icon: '💳', priceLabel: 'от' },
-    { id: 2, name: 'V-Bucks 1000 (Fortnite)', category: 'items', price: 799, icon: '🎯' },
-    { id: 3, name: "Baldur's Gate 3", category: 'games', price: 1999, icon: '🎮' },
-    { id: 4, name: 'Valorant Points 1000', category: 'items', price: 599, icon: '⚔️' },
-    { id: 5, name: 'CS2 Prime Status', category: 'games', price: 1199, icon: '🎮' },
-    { id: 6, name: 'Robux 1000 (Roblox)', category: 'items', price: 749, icon: '🟥' },
-    { id: 7, name: 'Elden Ring', category: 'games', price: 2499, icon: '🎮' },
-    { id: 8, name: 'Genshin Impact Кристаллы', category: 'items', price: 1299, icon: '✨' },
-    { id: 9, name: 'Смена региона Steam', category: 'steam', price: 277, icon: '💳' },
-    { id: 10, name: 'Dota 2 Battle Pass', category: 'moba', price: 799, icon: '⚔️' }
-  ];
-
-  const performSearch = (query) => {
+  const performSearch = async (query) => {
     if (!query.trim()) {
-      setSearchResults([]);
+      setSearchData(null);
       setShowResults(false);
       return;
     }
-
     setIsSearching(true);
     setShowResults(true);
 
-    setTimeout(() => {
-      const lowerQuery = query.toLowerCase();
-      
-      // Умный поиск с синонимами
-      const synonyms = {
-        'стим': ['steam', 'пополнение'],
-        'кс': ['cs2', 'cs', 'prime', 'counter-strike'],
-        'кс2': ['cs2', 'prime'],
-        'ксго': ['cs2', 'prime', 'csgo'],
-        'форт': ['fortnite', 'v-bucks', 'vbucks'],
-        'робуксы': ['robux', 'roblox'],
-        'роблокс': ['robux', 'roblox'],
-        'геншин': ['genshin', 'кристаллы'],
-        'валорант': ['valorant', 'vp'],
-        'дота': ['dota', 'battle pass'],
-        'элден': ['elden', 'ring']
-      };
-      
-      let searchTerms = [lowerQuery];
-      
-      for (const [key, values] of Object.entries(synonyms)) {
-        if (lowerQuery.includes(key)) {
-          searchTerms = [...searchTerms, ...values];
-        }
-      }
-      
-      const results = mockProducts.filter(p => {
-        const productText = `${p.name} ${p.category}`.toLowerCase();
-        return searchTerms.some(term => productText.includes(term));
-      });
+    if (abortRef.current) abortRef.current.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
 
-      setSearchResults(results.slice(0, 6));
+    try {
+      const res = await fetch('/api/ai/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, limit: 6 }),
+        signal: ctrl.signal
+      });
+      if (!res.ok) throw new Error('Search failed');
+      const data = await res.json();
+      setSearchData(data);
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        setSearchData({ results: [], intent: 'browse', totalFound: 0 });
+      }
+    } finally {
       setIsSearching(false);
-    }, 200);
+    }
   };
 
   const handleSearch = (e) => {
     const query = e.target.value;
     setSearchQuery(query);
-    performSearch(query);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => performSearch(query), 250);
   };
 
   const handleProductClick = (product) => {
     setShowResults(false);
     setSearchQuery('');
-    if (product.id === 1) {
+    if (product.category === 'steam' && /пополн/i.test(product.name)) {
       navigate('/steam-topup');
     } else {
       navigate(`/product/${product.id}`);
@@ -95,6 +82,10 @@ function AISearch() {
       setShowResults(false);
     }
   };
+
+  const results = searchData?.results || [];
+  const intent = searchData?.intent;
+  const intentInfo = intent && intent !== 'browse' ? INTENT_LABELS[intent] : null;
 
   return (
     <div className="search-section">
@@ -112,10 +103,10 @@ function AISearch() {
               onBlur={() => setTimeout(() => setShowResults(false), 200)}
             />
             {searchQuery && (
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className="search-clear"
-                onClick={() => { setSearchQuery(''); setSearchResults([]); setShowResults(false); }}
+                onClick={() => { setSearchQuery(''); setSearchData(null); setShowResults(false); }}
               >
                 ✕
               </button>
@@ -126,7 +117,6 @@ function AISearch() {
           </button>
         </form>
 
-        {/* Результаты */}
         {showResults && searchQuery && (
           <div className="search-dropdown">
             {isSearching ? (
@@ -134,33 +124,37 @@ function AISearch() {
                 <span className="loading-spinner"></span>
                 Ищем...
               </div>
-            ) : searchResults.length > 0 ? (
+            ) : results.length > 0 ? (
               <>
                 <div className="search-results-header">
-                  Найдено: {searchResults.length}
+                  {intentInfo && (
+                    <span className="search-intent-badge">
+                      {intentInfo.icon} {intentInfo.text}
+                    </span>
+                  )}
+                  <span className="search-results-count">Найдено: {searchData.totalFound}</span>
                 </div>
                 <div className="search-results-list">
-                  {searchResults.map(product => (
+                  {results.map(product => (
                     <div
                       key={product.id}
                       className="search-result-row"
                       onMouseDown={() => handleProductClick(product)}
                     >
-                      <span className="result-icon">{product.icon}</span>
+                      <span className="result-icon">{CATEGORY_ICONS[product.category] || '🎮'}</span>
                       <div className="result-info">
                         <span className="result-name">{product.name}</span>
                         <span className="result-cat">{product.category}</span>
                       </div>
                       <span className="result-price">
-                        {product.priceLabel && <span className="price-from">{product.priceLabel} </span>}
-                        {product.price}₽
+                        {product.price === 0 ? 'Бесплатно' : `${product.price}₽`}
                       </span>
                       <span className="result-arrow">→</span>
                     </div>
                   ))}
                 </div>
-                <Link 
-                  to={`/catalog?search=${encodeURIComponent(searchQuery)}`} 
+                <Link
+                  to={`/catalog?search=${encodeURIComponent(searchQuery)}`}
                   className="search-all-link"
                   onMouseDown={(e) => { e.preventDefault(); navigate(`/catalog?search=${encodeURIComponent(searchQuery)}`); }}
                 >

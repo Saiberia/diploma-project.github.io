@@ -108,6 +108,18 @@
   transition: width 0.5s ease;
 }
 
+.rec-confidence.conf-high .confidence-fill {
+  background: linear-gradient(90deg, #10b981, #34d399);
+}
+.rec-confidence.conf-medium .confidence-fill {
+  background: linear-gradient(90deg, #f59e0b, #fbbf24);
+}
+.rec-confidence.conf-low .confidence-fill {
+  background: linear-gradient(90deg, #6b7280, #9ca3af);
+}
+.rec-confidence.conf-high .confidence-text { color: #34d399; }
+.rec-confidence.conf-medium .confidence-text { color: #fbbf24; }
+
 .confidence-text {
   font-size: 0.75rem;
   color: var(--text-secondary);

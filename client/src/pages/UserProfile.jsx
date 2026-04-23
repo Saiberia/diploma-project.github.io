@@ -286,6 +286,7 @@ function UserProfile({ user, onLogin, onLogout }) {
 
         <div className="auth-hint">
           <p>💡 Для заказа регистрация не обязательна!</p>
+          <p>👑 Чтобы открыть админ-панель — войдите с email, содержащим <b>admin</b> (например <code>admin@test.com</code>). Пароль — любой.</p>
         </div>
       </div>
     </div>
