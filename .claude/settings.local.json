@@ -3,7 +3,8 @@
     "allow": [
       "Bash(npm run *)",
       "Bash(curl -s http://localhost:5173)",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "Bash(curl -s -X POST http://localhost:5000/api/orders/create -H 'Content-Type: application/json' -d '{\"userId\":\"attacker_1\",\"productIds\":[\"steam-20\"],\"totalPrice\":5,\"paymentMethod\":\"card\"}')"
     ]
   }
 }

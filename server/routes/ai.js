@@ -238,6 +238,15 @@ router.post('/verify-transaction', (req, res) => {
   }
 });
 
+/**
+ * GET /api/ai/fraud-log
+ * Последние заблокированные транзакции
+ */
+router.get('/fraud-log', (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+  res.json(aiEngine.getFlaggedTransactions(limit));
+});
+
 // ==========================================
 // 💬 АНАЛИЗ НАСТРОЕНИЙ И ЧАТ
 // ==========================================
