@@ -20,6 +20,9 @@ class NovaAIEngine {
     this.priceHistory = new Map();
     this.demandHistory = new Map();
     this.sessionData = new Map();
+    this.orderHistory = new Map();   // userId → [{amount, ip, deviceId, ts}]
+    this.ipOrderHistory = new Map(); // ip → [{userId, amount, ts}]
+    this.flaggedTransactions = [];   // лог заблокированных
     
     // ML модели (эмуляция)
     this.models = {
@@ -767,88 +770,111 @@ class NovaAIEngine {
   // ==========================================
   
   /**
-   * Проверка транзакции на фрод
+   * Записывает совершённый заказ в историю для будущих проверок
+   */
+  recordOrder(userId, amount, ipAddress = 'unknown', deviceId = 'unknown') {
+    const ts = Date.now();
+    const entry = { amount, ip: ipAddress, deviceId, ts };
+
+    const userOrders = this.orderHistory.get(userId) || [];
+    userOrders.push(entry);
+    // храним последние 200 заказов на пользователя
+    if (userOrders.length > 200) userOrders.splice(0, userOrders.length - 200);
+    this.orderHistory.set(userId, userOrders);
+
+    const ipOrders = this.ipOrderHistory.get(ipAddress) || [];
+    ipOrders.push({ userId, amount, ts });
+    if (ipOrders.length > 500) ipOrders.splice(0, ipOrders.length - 500);
+    this.ipOrderHistory.set(ipAddress, ipOrders);
+  }
+
+  /**
+   * Проверка транзакции на фрод — реальные эвристики
    */
   detectFraud(transaction) {
-    const {
-      userId,
-      amount,
-      paymentMethod,
-      deviceId,
-      ipAddress,
-      userAgent
-    } = transaction;
-    
-    const checks = {
-      velocityCheck: this.checkVelocity(userId),
-      amountAnomaly: this.checkAmountAnomaly(userId, amount),
-      deviceCheck: this.checkDevice(userId, deviceId),
-      behaviorCheck: this.checkBehavior(userId)
-    };
-    
-    // Расчёт риска
+    const { userId, amount, ipAddress = 'unknown', deviceId = 'unknown' } = transaction;
+    const now = Date.now();
+    const triggers = [];
     let riskScore = 0;
-    if (!checks.velocityCheck) riskScore += 30;
-    if (!checks.amountAnomaly) riskScore += 25;
-    if (!checks.deviceCheck) riskScore += 25;
-    if (!checks.behaviorCheck) riskScore += 20;
-    
-    const riskLevel = riskScore < 30 ? 'low' : riskScore < 60 ? 'medium' : 'high';
-    
-    return {
-      transactionId: `txn_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
-      isLegitimate: riskScore < 60,
+
+    const userOrders = this.orderHistory.get(userId) || [];
+    const ipOrders   = this.ipOrderHistory.get(ipAddress) || [];
+
+    // 1. Velocity по userId: >3 заказа за последние 10 минут → тест карты
+    const per10min = userOrders.filter(o => now - o.ts < 10 * 60 * 1000);
+    if (per10min.length >= 3) {
+      riskScore += 35;
+      triggers.push(`velocity_user: ${per10min.length} orders in 10 min`);
+    }
+
+    // 2. Velocity по IP: >5 заказов за час с одного IP → скоординированная атака
+    const ipPer1h = ipOrders.filter(o => now - o.ts < 60 * 60 * 1000);
+    if (ipPer1h.length >= 5) {
+      riskScore += 30;
+      triggers.push(`velocity_ip: ${ipPer1h.length} orders in 1h from ${ipAddress}`);
+    }
+
+    // 3. Аномальная сумма: >5x от среднего пользователя (нужно ≥3 заказов в истории)
+    if (userOrders.length >= 3) {
+      const avgAmount = userOrders.reduce((s, o) => s + o.amount, 0) / userOrders.length;
+      if (amount > avgAmount * 5) {
+        riskScore += 25;
+        triggers.push(`amount_anomaly: $${amount} vs avg $${avgAmount.toFixed(2)}`);
+      }
+    }
+
+    // 4. Новый пользователь + крупная сумма (>$100 и нет истории)
+    if (userOrders.length === 0 && amount > 100) {
+      riskScore += 20;
+      triggers.push(`new_user_large_amount: $${amount}`);
+    }
+
+    // 5. Ночное время 2:00–5:00 по UTC (статистически аномальное)
+    const hour = new Date(now).getUTCHours();
+    if (hour >= 2 && hour < 5) {
+      riskScore += 15;
+      triggers.push(`night_time: ${hour}:00 UTC`);
+    }
+
+    // 6. Паттерн тест-карты: ≥3 заказа <$10 за последние 30 минут
+    const smallRecent = userOrders.filter(o => now - o.ts < 30 * 60 * 1000 && o.amount < 10);
+    if (smallRecent.length >= 3) {
+      riskScore += 30;
+      triggers.push(`card_testing: ${smallRecent.length} micro-orders <$10 in 30 min`);
+    }
+
+    riskScore = Math.min(100, riskScore);
+    const riskLevel = riskScore < 25 ? 'low' : riskScore < 55 ? 'medium' : 'high';
+    const blocked = riskScore >= 55;
+
+    const result = {
+      transactionId: `txn_${now}_${Math.random().toString(36).slice(2, 7)}`,
+      blocked,
       riskScore,
       riskLevel,
-      checks,
-      requiresVerification: riskScore >= 40,
-      recommendation: this.getFraudRecommendation(riskScore, checks)
+      triggers,
+      requiresVerification: riskScore >= 35 && !blocked,
+      recommendation: this._fraudRecommendation(riskScore),
+      checkedAt: new Date(now).toISOString()
     };
+
+    if (blocked) {
+      this.flaggedTransactions.push({ ...result, userId, amount, ipAddress });
+      // держим лог последних 1000
+      if (this.flaggedTransactions.length > 1000) this.flaggedTransactions.shift();
+    }
+
+    return result;
   }
-  
-  checkVelocity(userId) {
-    const history = this.userBehavior.get(userId);
-    if (!history) return true;
-    
-    const recentPurchases = history.purchases.filter(p => {
-      const hourAgo = Date.now() - 60 * 60 * 1000;
-      return new Date(p.timestamp).getTime() > hourAgo;
-    });
-    
-    return recentPurchases.length < 5; // Не более 5 покупок в час
+
+  getFlaggedTransactions(limit = 50) {
+    return this.flaggedTransactions.slice(-limit).reverse();
   }
-  
-  checkAmountAnomaly(userId, amount) {
-    const history = this.userBehavior.get(userId);
-    if (!history || history.purchases.length < 3) return true;
-    
-    const avgAmount = history.purchases.reduce((s, p) => s + (p.price || 0), 0) 
-                    / history.purchases.length;
-    
-    // Сумма не должна превышать 5x от средней
-    return amount <= avgAmount * 5;
-  }
-  
-  checkDevice(userId, deviceId) {
-    // Проверка известного устройства
-    const session = this.sessionData.get(userId);
-    if (!session) return true;
-    
-    return !session.knownDevices || session.knownDevices.includes(deviceId);
-  }
-  
-  checkBehavior(userId) {
-    const history = this.userBehavior.get(userId);
-    if (!history) return true;
-    
-    // Должны быть просмотры перед покупкой
-    return history.views.length > 0;
-  }
-  
-  getFraudRecommendation(riskScore, checks) {
-    if (riskScore >= 60) return 'Заблокировать транзакцию и уведомить службу безопасности';
-    if (riskScore >= 40) return 'Требуется дополнительная верификация (SMS/Email)';
-    if (riskScore >= 20) return 'Мониторинг транзакции';
+
+  _fraudRecommendation(score) {
+    if (score >= 55) return 'Транзакция заблокирована — уведомите службу безопасности';
+    if (score >= 35) return 'Требуется верификация по SMS/Email';
+    if (score >= 15) return 'Мониторинг — транзакция помечена';
     return 'Транзакция безопасна';
   }
 
