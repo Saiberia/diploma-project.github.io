@@ -543,8 +543,9 @@ function App() {
           } />
           
           <Route path="/admin" element={
-            <AdminPanel 
+            <AdminPanel
               products={products}
+              setProducts={setProducts}
               user={user}
             />
           } />

@@ -1,5 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, useRef, useEffect } from 'react';
+import { smartFilter } from '../utils/searchUtils';
 
 function Header({ user, cartCount, onLogout, onSearch, products = [] }) {
   const navigate = useNavigate();
@@ -29,22 +30,16 @@ function Header({ user, cartCount, onLogout, onSearch, products = [] }) {
   }, []);
 
   const handleSearch = (e) => {
-    const query = e.target.value.toLowerCase();
-    setSearchQuery(e.target.value);
+    const query = e.target.value;
+    setSearchQuery(query);
 
-    if (query.trim() === '') {
+    if (!query.trim()) {
       setSearchResults([]);
       setShowSearch(false);
       return;
     }
 
-    // Search in products
-    const results = products.filter(p =>
-      p.name.toLowerCase().includes(query) ||
-      p.description.toLowerCase().includes(query) ||
-      p.category.toLowerCase().includes(query)
-    ).slice(0, 6);
-
+    const results = smartFilter(products, query, 6);
     setSearchResults(results);
     setShowSearch(results.length > 0);
 

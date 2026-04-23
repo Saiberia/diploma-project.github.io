@@ -697,39 +697,121 @@ class NovaAIEngine {
   }
   
   expandSearchTerms(query) {
+    // Полный список алиасов, включая названия игр на русском
     const synonyms = {
-      'стим': ['steam', 'стим', 'пополнение'],
-      'кс': ['cs2', 'cs', 'counter-strike', 'кс2', 'ксго'],
-      'форт': ['fortnite', 'фортнайт', 'v-bucks', 'вбаксы'],
-      'роблокс': ['roblox', 'робуксы', 'robux'],
-      'геншин': ['genshin', 'гачa', 'примогемы'],
-      'валорант': ['valorant', 'vp', 'валорант'],
-      'дота': ['dota', 'дота2', 'dota2'],
-      'элден': ['elden ring', 'элден ринг'],
-      'балдур': ['baldurs gate', 'baldur', 'балдур']
+      'стим': ['steam', 'пополнение'],
+      'кс': ['cs2', 'cs', 'counter-strike'],
+      'кс2': ['cs2'],
+      'ксго': ['cs2', 'csgo'],
+      'контра': ['cs2', 'counter-strike'],
+      'форт': ['fortnite', 'v-bucks'],
+      'фортнайт': ['fortnite', 'v-bucks'],
+      'вбакс': ['v-bucks', 'fortnite'],
+      'вибаксы': ['v-bucks'],
+      'роблокс': ['roblox', 'robux'],
+      'робаксы': ['robux'],
+      'робуксы': ['robux'],
+      'геншин': ['genshin', 'кристаллы'],
+      'валорант': ['valorant'],
+      'валик': ['valorant'],
+      'дота': ['dota'],
+      'дотка': ['dota'],
+      'элден': ['elden', 'ring'],
+      'элденринг': ['elden ring'],
+      'балдур': ["baldur's gate", 'baldur', 'bg3'],
+      'бг3': ["baldur's gate 3"],
+      'ведьмак': ['witcher', 'wild hunt'],
+      'ведьмака': ['witcher'],
+      'киберпанк': ['cyberpunk', '2077'],
+      'кибер': ['cyberpunk'],
+      'гта': ['gta', 'grand theft auto'],
+      'гта5': ['gta', 'premium'],
+      'рдр': ['red dead', 'redemption'],
+      'рдр2': ['red dead redemption 2'],
+      'хогвартс': ['hogwarts', 'legacy'],
+      'старфилд': ['starfield'],
+      'апекс': ['apex'],
+      'лол': ['league of legends', 'lol'],
+      'лига': ['league of legends'],
+      'мл': ['mobile legends'],
+      'бравл': ['brawl stars'],
+      'пабг': ['pubg'],
+      'пубг': ['pubg'],
+      'майнкрафт': ['minecraft'],
+      'майн': ['minecraft'],
+      'хонкай': ['honkai', 'star rail'],
+      'хср': ['honkai star rail'],
+      'геймпасс': ['game pass', 'xbox'],
+      'гейм пасс': ['game pass', 'xbox'],
+      'подписка': ['game pass', 'ea play'],
+      'телеграм старс': ['telegram stars'],
+      'тг старс': ['telegram stars'],
+      'звёзды': ['telegram stars'],
+      'звезды': ['telegram stars']
     };
-    
-    const terms = query.split(' ');
-    const expanded = new Set(terms);
-    
-    terms.forEach(term => {
-      Object.entries(synonyms).forEach(([key, values]) => {
-        if (term.includes(key) || values.some(v => v.includes(term))) {
-          values.forEach(v => expanded.add(v));
-        }
-      });
-    });
-    
+
+    const expanded = new Set();
+    // Полный запрос целиком
+    expanded.add(query);
+    // Слова
+    const words = query.split(' ').filter(Boolean);
+    words.forEach(w => expanded.add(w));
+
+    // Алиасы: ищем ключи как подстроку в полном запросе ИЛИ в слове
+    for (const [key, values] of Object.entries(synonyms)) {
+      if (query.includes(key) || words.some(w => w === key || (key.length >= 4 && w.includes(key)))) {
+        values.forEach(v => expanded.add(v));
+      }
+    }
+
+    // Перевод раскладки (если юзер перепутал EN/RU)
+    const swapped = this.swapKeyboardLayout(query);
+    if (swapped && swapped !== query) {
+      expanded.add(swapped);
+      swapped.split(' ').forEach(w => { if (w) expanded.add(w); });
+      for (const [key, values] of Object.entries(synonyms)) {
+        if (swapped.includes(key)) values.forEach(v => expanded.add(v));
+      }
+    }
+
     return Array.from(expanded);
+  }
+
+  swapKeyboardLayout(str) {
+    if (!str) return null;
+    const EN_TO_RU = {
+      q: 'й', w: 'ц', e: 'у', r: 'к', t: 'е', y: 'н', u: 'г', i: 'ш', o: 'щ', p: 'з',
+      '[': 'х', ']': 'ъ', a: 'ф', s: 'ы', d: 'в', f: 'а', g: 'п', h: 'р', j: 'о',
+      k: 'л', l: 'д', ';': 'ж', "'": 'э', z: 'я', x: 'ч', c: 'с', v: 'м', b: 'и',
+      n: 'т', m: 'ь', ',': 'б', '.': 'ю'
+    };
+    const RU_TO_EN = Object.fromEntries(Object.entries(EN_TO_RU).map(([e, r]) => [r, e]));
+
+    const hasRu = /[а-я]/i.test(str);
+    const hasEn = /[a-z]/i.test(str);
+    if (hasRu && hasEn) return null;
+
+    if (hasEn) {
+      const out = str.split('').map(c => EN_TO_RU[c] || c).join('');
+      return /[а-я]/i.test(out) ? out : null;
+    }
+    if (hasRu) {
+      const out = str.split('').map(c => RU_TO_EN[c] || c).join('');
+      return /[a-z]/i.test(out) ? out : null;
+    }
+    return null;
   }
   
   calculateSearchScore(product, terms, intent) {
     let score = 0;
-    const productText = `${product.name} ${product.category} ${product.description || ''}`.toLowerCase();
-    
+    const nameText = (product.name || '').toLowerCase();
+    const productText = `${product.name} ${product.category || ''} ${product.genre || ''} ${(product.tags || []).join(' ')} ${product.description || ''}`.toLowerCase();
+
     terms.forEach(term => {
+      if (!term || term.length < 2) return;
       if (productText.includes(term)) {
-        score += term.length > 3 ? 20 : 10;
+        score += term.length >= 4 ? 20 : term.length === 3 ? 10 : 4;
+        if (nameText.includes(term)) score += 10;
       }
     });
     

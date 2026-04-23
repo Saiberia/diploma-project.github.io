@@ -12,10 +12,12 @@ import { useNavigate, Link } from 'react-router-dom';
  * - Настройки магазина
  */
 
-function AdminPanel({ products, user }) {
+function AdminPanel({ products, setProducts, user }) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [productsList, setProductsList] = useState(products || []);
+  // Работаем напрямую с общим списком товаров из App, чтобы изменения видны в каталоге
+  const productsList = products || [];
+  const setProductsList = setProducts || (() => {});
   const [searchQuery, setSearchQuery] = useState('');
   const [notification, setNotification] = useState(null);
   
@@ -32,7 +34,7 @@ function AdminPanel({ products, user }) {
   const [editingId, setEditingId] = useState(null);
 
   // Mock данные
-  const [mockOrders] = useState([
+  const [mockOrders, setMockOrders] = useState([
     { id: 'ORD-7841', customer: 'aleksandr@mail.ru', username: 'Alexandr', items: 2, total: 1599, status: 'completed', date: '2024-01-15 14:32', products: ['V-Bucks 1000', 'Robux 400'] },
     { id: 'ORD-7840', customer: 'player@gmail.com', username: 'ProPlayer', items: 1, total: 749, status: 'processing', date: '2024-01-15 13:15', products: ['CS2 Prime'] },
     { id: 'ORD-7839', customer: 'gamer@yandex.ru', username: 'GamerPro', items: 3, total: 2499, status: 'completed', date: '2024-01-15 12:08', products: ['Elden Ring'] },
@@ -40,6 +42,12 @@ function AdminPanel({ products, user }) {
     { id: 'ORD-7837', customer: 'test@test.com', username: 'TestUser', items: 2, total: 1299, status: 'cancelled', date: '2024-01-14 18:22', products: ['Genshin Кристаллы'] },
     { id: 'ORD-7836', customer: 'dota@mail.ru', username: 'DotaFan', items: 1, total: 799, status: 'completed', date: '2024-01-14 16:10', products: ['Dota 2 Battle Pass'] }
   ]);
+
+  const updateOrderStatus = (orderId, newStatus) => {
+    setMockOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
+    const label = newStatus === 'completed' ? 'выполнен' : newStatus === 'cancelled' ? 'отменён' : 'в обработке';
+    showNotification(`Заказ ${orderId} — ${label}`, newStatus === 'cancelled' ? 'warning' : 'success');
+  };
 
   const [mockUsers] = useState([
     { id: 1, username: 'admin', email: 'admin@novashop.ru', role: 'admin', orders: 0, spent: 0, registered: '2024-01-01', status: 'active' },
@@ -619,11 +627,38 @@ function AdminPanel({ products, user }) {
                           <td className="actions-cell">
                             <button
                               className="btn-icon"
-                              title="Подробнее"
+                              title={`${order.products.join(', ')} — ${order.total} ₽`}
                               onClick={() => showNotification(`Заказ ${order.id}: ${order.products.join(', ')} — ${order.total} ₽`)}
                             >
                               👁️
                             </button>
+                            {order.status === 'processing' && (
+                              <>
+                                <button
+                                  className="btn-icon edit"
+                                  title="Отметить выполненным"
+                                  onClick={() => updateOrderStatus(order.id, 'completed')}
+                                >
+                                  ✓
+                                </button>
+                                <button
+                                  className="btn-icon delete"
+                                  title="Отменить"
+                                  onClick={() => { if (window.confirm('Отменить заказ ' + order.id + '?')) updateOrderStatus(order.id, 'cancelled'); }}
+                                >
+                                  ✕
+                                </button>
+                              </>
+                            )}
+                            {order.status === 'cancelled' && (
+                              <button
+                                className="btn-icon edit"
+                                title="Вернуть в обработку"
+                                onClick={() => updateOrderStatus(order.id, 'processing')}
+                              >
+                                ↻
+                              </button>
+                            )}
                           </td>
                         </tr>
                       ))}

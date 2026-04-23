@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { expandQuery, normalize as smartNormalize } from '../utils/searchUtils';
 
 /**
  * Умный AI чат-бот Nova Shop
@@ -138,6 +139,78 @@ const KNOWLEDGE_BASE = {
       action: '/catalog?category=games',
       info: "Baldur's Gate 3 - потрясающая RPG года!",
       price: '1999₽'
+    },
+    witcher: {
+      id: 'witcher',
+      names: ['witcher', 'the witcher', 'witcher 3', 'wild hunt', 'ведьмак', 'ведьмака', 'ведьмак 3', 'ведмак'],
+      category: 'games',
+      action: '/catalog?category=games',
+      info: 'The Witcher 3: Wild Hunt — одна из лучших RPG всех времён, тысячи часов контента!',
+      price: '1599₽'
+    },
+    cyberpunk: {
+      id: 'cyberpunk',
+      names: ['cyberpunk', 'cyberpunk 2077', 'киберпанк', 'кибер', 'киберпанк 2077', '2077'],
+      category: 'games',
+      action: '/catalog?category=games',
+      info: 'Cyberpunk 2077 — футуристическая RPG от CD Projekt Red в Найт-Сити.',
+      price: '1799₽'
+    },
+    gta: {
+      id: 'gta',
+      names: ['gta', 'gta v', 'gta 5', 'grand theft auto', 'гта', 'гта 5', 'гта5', 'гта v'],
+      category: 'games',
+      action: '/catalog?category=games',
+      info: 'GTA V Premium Edition — культовая игра от Rockstar с GTA Online.',
+      price: '1299₽'
+    },
+    rdr: {
+      id: 'rdr',
+      names: ['red dead redemption', 'red dead', 'rdr', 'rdr2', 'red dead 2', 'рдр', 'рдр2', 'ред дед', 'ред дэд'],
+      category: 'games',
+      action: '/catalog?category=games',
+      info: 'Red Dead Redemption 2 — эпическая история Дикого Запада от Rockstar.',
+      price: '1999₽'
+    },
+    hogwarts: {
+      id: 'hogwarts',
+      names: ['hogwarts', 'hogwarts legacy', 'хогвартс', 'хогвардс', 'гарри поттер', 'наследие хогвартса'],
+      category: 'games',
+      action: '/catalog?category=games',
+      info: 'Hogwarts Legacy — открытый мир вселенной Гарри Поттера.',
+      price: '2299₽'
+    },
+    starfield: {
+      id: 'starfield',
+      names: ['starfield', 'старфилд', 'старфилд bethesda', 'звёздное поле', 'звездное поле'],
+      category: 'games',
+      action: '/catalog?category=games',
+      info: 'Starfield — космическая RPG от Bethesda, исследуй 1000 планет.',
+      price: '2999₽'
+    },
+    telegramstars: {
+      id: 'tgstars',
+      names: ['telegram stars', 'телеграм старс', 'тг старс', 'звёзды телеграм', 'звезды телеграм', 'звёзды', 'tg stars'],
+      category: 'subscription',
+      action: '/catalog?category=subscription',
+      info: 'Telegram Stars — внутренняя валюта Telegram для платных каналов и цифровых товаров.',
+      price: 'от 200₽'
+    },
+    gamepass: {
+      id: 'gamepass',
+      names: ['game pass', 'gamepass', 'гейм пасс', 'геймпасс', 'xbox game pass', 'xbox pass', 'xgp'],
+      category: 'subscription',
+      action: '/catalog?category=subscription',
+      info: 'Xbox Game Pass Ultimate — сотни игр по подписке на Xbox и PC.',
+      price: '799₽'
+    },
+    eaplay: {
+      id: 'eaplay',
+      names: ['ea play', 'ea play pro', 'иа плей', 'иа плэй', 'иа play', 'eaplay'],
+      category: 'subscription',
+      action: '/catalog?category=subscription',
+      info: 'EA Play Pro — библиотека игр от Electronic Arts по подписке.',
+      price: '499₽'
     }
   },
   
@@ -202,6 +275,17 @@ const KNOWLEDGE_BASE = {
   goodbyes: ['пока', 'до свидания', 'bye', 'удачи', 'всего доброго', 'бб', 'bb', 'досвидос', 'до встречи', 'прощай']
 };
 
+// Служебные слова — не должны сами по себе триггерить ответы
+const STOPWORDS = new Set([
+  'я', 'ты', 'вы', 'мы', 'он', 'она', 'оно', 'они',
+  'не', 'ни', 'и', 'а', 'но', 'да', 'или', 'либо',
+  'в', 'во', 'на', 'под', 'за', 'от', 'до', 'из', 'с', 'со', 'у', 'к', 'по', 'о', 'об', 'про',
+  'что', 'чем', 'чему', 'как', 'где', 'когда', 'кто', 'это', 'этот', 'эта', 'эти', 'тот',
+  'тут', 'там', 'вот', 'так', 'же', 'ли', 'бы', 'то', 'всё', 'все', 'был', 'была', 'было',
+  'есть', 'нет', 'мне', 'тебе', 'меня', 'тебя', 'ему', 'ей',
+  'is', 'are', 'the', 'a', 'an', 'of', 'to', 'for', 'on', 'in', 'at'
+]);
+
 // Нормализация текста
 function normalize(text) {
   return text
@@ -212,41 +296,53 @@ function normalize(text) {
     .trim();
 }
 
+function contentTokens(text) {
+  return tokenize(text).filter(t => t.length >= 2 && !STOPWORDS.has(t));
+}
+
 // Токенизация
 function tokenize(text) {
   return normalize(text).split(' ').filter(t => t.length > 0);
 }
 
-// Проверка совпадения с учётом опечаток
+// Строгий матч: требует существенного пересечения, чтобы не срабатывало на 2-буквенных подстроках
+// (было: "ло" → "не пришло" → refund, "лох" → "лохотрон" → safety)
 function fuzzyMatch(input, target) {
   const normInput = normalize(input);
   const normTarget = normalize(target);
-  
-  // Точное совпадение
-  if (normInput.includes(normTarget) || normTarget.includes(normInput)) {
+  if (!normInput || !normTarget) return false;
+
+  // Точное равенство
+  if (normInput === normTarget) return true;
+
+  // Вхождение полной фразы: требуем минимум 4 символа в меньшей из строк,
+  // чтобы короткие запросы ("ло", "лох") не триггерили длинные триггеры
+  const minLen = Math.min(normInput.length, normTarget.length);
+  if (minLen >= 4 && (normInput.includes(normTarget) || normTarget.includes(normInput))) {
     return true;
   }
-  
-  // Проверка каждого слова
+
   const inputTokens = tokenize(input);
   const targetTokens = tokenize(target);
-  
+
   for (const inputToken of inputTokens) {
     for (const targetToken of targetTokens) {
       if (inputToken === targetToken) return true;
-      if (inputToken.length > 2 && targetToken.includes(inputToken)) return true;
-      if (targetToken.length > 2 && inputToken.includes(targetToken)) return true;
-      
-      // Левенштейн для коротких слов
-      if (inputToken.length > 3 && targetToken.length > 3) {
+      // Для подстрок требуем минимум 4 символа в коротком токене
+      const tokenMin = Math.min(inputToken.length, targetToken.length);
+      if (tokenMin >= 4 && (inputToken.includes(targetToken) || targetToken.includes(inputToken))) {
+        return true;
+      }
+      // Левенштейн только для длинных токенов
+      if (inputToken.length >= 5 && targetToken.length >= 5) {
         const distance = levenshtein(inputToken, targetToken);
-        if (distance <= Math.floor(Math.min(inputToken.length, targetToken.length) / 3)) {
+        if (distance <= Math.floor(Math.min(inputToken.length, targetToken.length) / 4)) {
           return true;
         }
       }
     }
   }
-  
+
   return false;
 }
 
@@ -271,24 +367,38 @@ function levenshtein(a, b) {
   return matrix[b.length][a.length];
 }
 
-// Поиск продукта
+// Поиск продукта: учитывает алиасы (ведьмак→witcher) и перепутанную раскладку (dtlmvfr→ведьмак)
 function findProduct(query) {
-  const normalized = normalize(query);
+  const variants = expandQuery(query);
+  if (!variants.length) return null;
+
   let bestMatch = null;
   let bestScore = 0;
-  
+
   for (const [key, product] of Object.entries(KNOWLEDGE_BASE.products)) {
     for (const name of product.names) {
-      if (fuzzyMatch(normalized, name)) {
-        const score = name.length;
-        if (score > bestScore) {
-          bestScore = score;
-          bestMatch = { key, ...product };
+      const normName = smartNormalize(name);
+      if (!normName) continue;
+      for (const variant of variants) {
+        const v = variant.trim();
+        if (!v || v.length < 2) continue;
+        let matched = false;
+        // Точное или полуточное совпадение — предпочитаем длинные совпадения
+        if (v === normName) matched = true;
+        else if (v.length >= 3 && normName === v) matched = true;
+        else if (normName.length >= 3 && v.length >= 3 && (normName.includes(v) || v.includes(normName))) matched = true;
+
+        if (matched) {
+          // Чем длиннее совпавший вариант и чем он ближе к имени, тем весомее
+          const score = Math.min(v.length, normName.length) + (v === normName ? 10 : 0);
+          if (score > bestScore) {
+            bestScore = score;
+            bestMatch = { key, ...product };
+          }
         }
       }
     }
   }
-  
   return bestMatch;
 }
 
@@ -463,15 +573,16 @@ function generateResponse(query, context = [], navigate) {
     };
   }
 
-  // Если ничего не найдено - умные подсказки
+  // Если ничего не найдено - умные подсказки (только при осмысленных токенах от 3 символов)
   const suggestions = [];
   const tokens = tokenize(query);
-  
+
   for (const token of tokens) {
-    if (token.length >= 2) {
+    if (token.length >= 3) {
       for (const [key, product] of Object.entries(KNOWLEDGE_BASE.products)) {
         for (const name of product.names) {
-          if (name.includes(token) || token.includes(name.substring(0, 3))) {
+          // Только когда токен не короче 3 И является полноценной подстрокой имени (или наоборот)
+          if ((name.length >= 3 && name.includes(token)) || (token.length >= 4 && token.includes(name))) {
             if (!suggestions.find(s => s.key === key)) {
               suggestions.push({ key, name: product.names[0] });
             }
