@@ -617,7 +617,13 @@ function AdminPanel({ products, user }) {
                           </td>
                           <td className="date-cell">{order.date}</td>
                           <td className="actions-cell">
-                            <button className="btn-icon" title="Подробнее">👁️</button>
+                            <button
+                              className="btn-icon"
+                              title="Подробнее"
+                              onClick={() => showNotification(`Заказ ${order.id}: ${order.products.join(', ')} — ${order.total} ₽`)}
+                            >
+                              👁️
+                            </button>
                           </td>
                         </tr>
                       ))}

@@ -562,6 +562,10 @@ function Chatbot() {
   };
 
   const handleAction = (action) => {
+    if (/^https?:\/\//i.test(action)) {
+      window.open(action, '_blank', 'noopener,noreferrer');
+      return;
+    }
     setIsOpen(false);
     navigate(action);
   };
