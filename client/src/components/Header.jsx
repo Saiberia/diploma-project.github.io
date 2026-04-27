@@ -146,6 +146,9 @@ function Header({ user, cartCount, onLogout, onSearch, products = [] }) {
                         <Link to="/admin" className="dropdown-item admin-link">
                           ⚙️ Админ-панель
                         </Link>
+                        <Link to="/admin/ai-metrics" className="dropdown-item admin-link">
+                          📐 AI-метрики
+                        </Link>
                         <Link to="/admin/settings" className="dropdown-item admin-link">
                           ⚡ Настройки
                         </Link>

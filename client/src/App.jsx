@@ -16,6 +16,7 @@ import Orders from './pages/Orders';
 import Cart from './pages/Cart';
 import Checkout from './pages/Checkout';
 import AdminPanel from './pages/AdminPanel';
+import AIMetrics from './pages/AIMetrics';
 import AdminSettings from './pages/AdminSettings';
 import SteamTopup from './pages/SteamTopup';
 
@@ -551,10 +552,14 @@ function App() {
           } />
 
           <Route path="/admin/settings" element={
-            <AdminSettings 
+            <AdminSettings
               user={user}
               onLogout={handleLogout}
             />
+          } />
+
+          <Route path="/admin/ai-metrics" element={
+            <AIMetrics user={user} />
           } />
         </Routes>
 

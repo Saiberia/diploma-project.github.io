@@ -2057,6 +2057,30 @@ body {
   box-shadow: 0 6px 16px rgba(0, 212, 255, 0.4);
 }
 
+.message-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+
+.message-choice-btn {
+  padding: 0.4rem 0.8rem;
+  background: rgba(0, 212, 255, 0.1);
+  color: var(--primary);
+  border: 1px solid rgba(0, 212, 255, 0.4);
+  border-radius: 999px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.message-choice-btn:hover {
+  background: rgba(0, 212, 255, 0.25);
+  border-color: var(--primary);
+  transform: translateY(-1px);
+}
+
 /* Quick action buttons */
 .chatbot-quick-actions {
   padding: 0.75rem 1rem;

@@ -160,35 +160,103 @@ export function expandQuery(raw) {
   return Array.from(variants);
 }
 
+// ── BM25 (Okapi BM25) ─────────────────────────────────────────────────────
+//
+// Стандартная формула из IR-литературы:
+//   score(D, Q) = Σ IDF(q) · (f(q,D)·(k1+1)) / (f(q,D) + k1·(1-b + b·|D|/avgdl))
+//
+// На клиенте индекс пересчитывается лениво при изменении ссылки на список
+// товаров. Для 28 товаров это занимает <1 мс.
+
+const STOPWORDS = new Set([
+  'и','в','во','на','с','со','а','но','или','что','как','для','от','до','из',
+  'к','у','о','об','это','этот','эта','эти','тот','та','те','же','бы','ли',
+  'не','ни','по','за','при','то','уже','еще','быть','есть','был',
+  'была','было','были','the','a','an','of','to','for','on','in','at','is',
+  'are','with','and','or','by','from'
+]);
+
+function tokenize(text) {
+  if (!text) return [];
+  return String(text)
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .split(/[^a-zа-я0-9-]+/i)
+    .filter(t => t.length >= 2 && !STOPWORDS.has(t));
+}
+
+let _indexProducts = null;
+let _index = null;
+
+function buildIndex(products) {
+  const docs = [];
+  const df = new Map();
+  let totalLen = 0;
+
+  for (const p of products) {
+    // name × 2 — поле title весит больше (обычная IR-эвристика)
+    const text = [
+      p.name, p.name,
+      p.category, p.genre,
+      ...(p.tags || []),
+      p.description
+    ].filter(Boolean).join(' ');
+
+    const tokens = tokenize(text);
+    const tf = new Map();
+    for (const t of tokens) tf.set(t, (tf.get(t) || 0) + 1);
+
+    docs.push({ product: p, length: tokens.length, tf });
+    totalLen += tokens.length;
+
+    const unique = new Set(tokens);
+    for (const t of unique) df.set(t, (df.get(t) || 0) + 1);
+  }
+
+  const N = docs.length;
+  const idf = new Map();
+  for (const [t, dfVal] of df) {
+    idf.set(t, Math.log((N - dfVal + 0.5) / (dfVal + 0.5) + 1));
+  }
+
+  return { docs, idf, avgdl: N ? totalLen / N : 0, k1: 1.5, b: 0.75 };
+}
+
+function ensureIndex(products) {
+  if (_indexProducts !== products || !_index) {
+    _indexProducts = products;
+    _index = buildIndex(products);
+  }
+  return _index;
+}
+
 /**
- * Умный фильтр: возвращает товары отсортированные по релевантности.
- * Используется Header-ом и как клиентский fallback для Chatbot-а.
+ * Умный фильтр на BM25.
+ * Используется в Header и как клиентский фолбэк для Chatbot-а.
  */
 export function smartFilter(products, rawQuery, limit = 10) {
   if (!rawQuery || !rawQuery.trim()) return [];
-  const terms = expandQuery(rawQuery);
-  if (!terms.length) return [];
+  if (!products || !products.length) return [];
+
+  // Расширяем запрос (раскладка + алиасы), затем токенизируем все варианты.
+  const variants = expandQuery(rawQuery);
+  const queryTokens = new Set();
+  for (const v of variants) tokenize(v).forEach(t => queryTokens.add(t));
+  if (!queryTokens.size) return [];
+
+  const { docs, idf, avgdl, k1, b } = ensureIndex(products);
 
   const scored = [];
-  for (const p of products) {
-    const haystack = normalize(
-      `${p.name} ${p.category || ''} ${p.genre || ''} ${(p.tags || []).join(' ')} ${p.description || ''}`
-    );
+  for (const doc of docs) {
+    const lenNorm = (1 - b) + b * (doc.length / (avgdl || 1));
     let score = 0;
-    for (const term of terms) {
-      if (!term) continue;
-      if (haystack.includes(term)) {
-        // Длинные термины веские, короткие — немного
-        score += term.length >= 4 ? 20 : term.length >= 3 ? 10 : 3;
-        // Бонус если термин в названии
-        if (normalize(p.name).includes(term)) score += 10;
-      }
+    for (const term of queryTokens) {
+      const f = doc.tf.get(term);
+      if (!f) continue;
+      const w = idf.get(term) || 0;
+      score += w * (f * (k1 + 1)) / (f + k1 * lenNorm);
     }
-    // Маленький бонус за рейтинг, чтобы при равных score вверху было качественное
-    if (score > 0) {
-      score += (p.rating || 4) * 0.5;
-      scored.push({ product: p, score });
-    }
+    if (score > 0.01) scored.push({ product: doc.product, score });
   }
 
   scored.sort((a, b) => b.score - a.score);

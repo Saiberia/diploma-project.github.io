@@ -1,7 +1,7 @@
 /**
  * 🧠 Nova Shop AI Engine
  * Центральный AI движок для всех интеллектуальных функций магазина
- * 
+ *
  * Функции:
  * - Персонализированные рекомендации (коллаборативная и контентная фильтрация)
  * - Анализ поведения пользователей
@@ -9,8 +9,10 @@
  * - Прогнозирование спроса
  * - Анализ настроений (чат)
  * - Детекция фрода
- * - Умный поиск с NLP
+ * - Умный поиск (BM25 + query expansion + раскладка)
  */
+
+import bm25Index from './bm25Search.js';
 
 class NovaAIEngine {
   constructor() {
@@ -649,17 +651,37 @@ class NovaAIEngine {
    */
   smartSearch(query, products, options = {}) {
     const normalizedQuery = this.normalizeQuery(query);
-    const intent = this.detectSearchIntent(normalizedQuery);
-    const expandedTerms = this.expandSearchTerms(normalizedQuery);
-    
-    // Поиск с учётом расширенных терминов
-    const results = products.map(product => {
-      const score = this.calculateSearchScore(product, expandedTerms, intent);
-      return { ...product, searchScore: score };
-    })
-    .filter(p => p.searchScore > 0)
-    .sort((a, b) => b.searchScore - a.searchScore);
-    
+    const intent          = this.detectSearchIntent(normalizedQuery);
+    const expandedTerms   = this.expandSearchTerms(normalizedQuery);
+
+    // Из расширенных фраз собираем токены для BM25.
+    // expandedTerms содержит и фразы ('grand theft auto'), и слова — всё токенизируется
+    // одним токенайзером.
+    const queryTokens = new Set();
+    for (const term of expandedTerms) {
+      bm25Index.tokenize(term).forEach(t => queryTokens.add(t));
+    }
+
+    let results = bm25Index.search(
+      [...queryTokens],
+      products,
+      { limit: 200, minScore: 0.01 }
+    );
+
+    // Поверх BM25 — небольшие бонусы по intent (cheap/popular/new).
+    // Они не должны доминировать, поэтому коэффициенты подобраны как доли от BM25.
+    if (results.length) {
+      const maxBm = results[0].bm25Score || 1;
+      results = results.map(p => {
+        let bonus = 0;
+        if (intent === 'cheap'   && p.price < 500)                     bonus += 0.20 * maxBm;
+        if (intent === 'popular' && (p.badge === 'popular' || p.badge === 'hit')) bonus += 0.20 * maxBm;
+        if (intent === 'new'     && p.badge === 'new')                 bonus += 0.25 * maxBm;
+        const finalScore = p.bm25Score + bonus;
+        return { ...p, searchScore: parseFloat(finalScore.toFixed(4)) };
+      }).sort((a, b) => b.searchScore - a.searchScore);
+    }
+
     return {
       query,
       normalizedQuery,
@@ -667,6 +689,7 @@ class NovaAIEngine {
       expandedTerms,
       results: results.slice(0, options.limit || 20),
       totalFound: results.length,
+      algorithm: 'bm25',
       suggestions: this.getSearchSuggestions(normalizedQuery, products)
     };
   }
@@ -800,38 +823,6 @@ class NovaAIEngine {
       return /[a-z]/i.test(out) ? out : null;
     }
     return null;
-  }
-  
-  calculateSearchScore(product, terms, intent) {
-    let score = 0;
-    const nameText = (product.name || '').toLowerCase();
-    const productText = `${product.name} ${product.category || ''} ${product.genre || ''} ${(product.tags || []).join(' ')} ${product.description || ''}`.toLowerCase();
-
-    terms.forEach(term => {
-      if (!term || term.length < 2) return;
-      if (productText.includes(term)) {
-        score += term.length >= 4 ? 20 : term.length === 3 ? 10 : 4;
-        if (nameText.includes(term)) score += 10;
-      }
-    });
-    
-    // Бонусы по намерению
-    switch (intent) {
-      case 'cheap':
-        score += product.price < 500 ? 15 : 0;
-        break;
-      case 'popular':
-        score += product.badge === 'popular' || product.badge === 'hit' ? 20 : 0;
-        break;
-      case 'new':
-        score += product.badge === 'new' ? 25 : 0;
-        break;
-    }
-    
-    // Бонус за рейтинг
-    score += (product.rating || 4) * 2;
-    
-    return score;
   }
   
   getSearchSuggestions(query, products) {

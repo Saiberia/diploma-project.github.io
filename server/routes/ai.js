@@ -1,6 +1,9 @@
 import express from 'express';
 import aiEngine from '../services/aiEngine.js';
 import recommendationService from '../services/recommendationService.js';
+import collaborativeFilteringService from '../services/collaborativeFilteringService.js';
+import hybridRecommender from '../services/hybridRecommender.js';
+import evaluationService from '../services/evaluationService.js';
 import products from '../data/products.js';
 
 const router = express.Router();
@@ -45,11 +48,43 @@ router.post('/track', (req, res) => {
  */
 router.post('/recommendations/personalized', (req, res) => {
   try {
-    const { viewedIds = [], purchasedIds = [], limit = 4 } = req.body;
-    const recs = recommendationService.getPersonalized(
-      viewedIds, purchasedIds, products, parseInt(limit)
-    );
-    res.json({ recommendations: recs, algorithm: 'content-based', generatedAt: new Date() });
+    const {
+      viewedIds = [], purchasedIds = [], limit = 4,
+      algorithm = 'hybrid',  // 'content' | 'collaborative' | 'hybrid'
+      alpha                  // override hybrid alpha (0..1)
+    } = req.body;
+
+    const n = parseInt(limit);
+    let recs;
+    let usedAlgo;
+
+    switch (algorithm) {
+      case 'content':
+        recs = recommendationService.getPersonalized(viewedIds, purchasedIds, products, n);
+        usedAlgo = 'content-based-tfidf';
+        break;
+      case 'collaborative':
+        recs = collaborativeFilteringService.getRecommendations(viewedIds, purchasedIds, products, n);
+        if (!recs.length) {
+          recs = recommendationService.getPersonalized(viewedIds, purchasedIds, products, n);
+          usedAlgo = 'content-based-tfidf (CF fallback)';
+        } else {
+          usedAlgo = 'item-item-cf';
+        }
+        break;
+      case 'hybrid':
+      default:
+        recs = hybridRecommender.getRecommendations(viewedIds, purchasedIds, products, n, alpha);
+        usedAlgo = 'hybrid';
+        break;
+    }
+
+    res.json({
+      recommendations: recs,
+      algorithm: usedAlgo,
+      alpha: algorithm === 'hybrid' ? (alpha ?? hybridRecommender.getAlpha()) : null,
+      generatedAt: new Date()
+    });
   } catch (error) {
     console.error('Personalized recs error:', error);
     res.status(500).json({ error: 'Failed to generate recommendations' });
@@ -64,8 +99,24 @@ router.get('/recommendations/similar/:productId', (req, res) => {
   try {
     const productId = parseInt(req.params.productId);
     const limit     = parseInt(req.query.limit) || 4;
-    const recs = recommendationService.getSimilarProducts(productId, products, limit);
-    res.json({ recommendations: recs, algorithm: 'cosine-similarity', generatedAt: new Date() });
+    const algorithm = req.query.algorithm || 'content';
+
+    let recs;
+    let usedAlgo;
+    if (algorithm === 'collaborative') {
+      recs = collaborativeFilteringService.getSimilarItems(productId, products, limit);
+      if (!recs.length) {
+        recs = recommendationService.getSimilarProducts(productId, products, limit);
+        usedAlgo = 'tfidf-cosine (CF fallback)';
+      } else {
+        usedAlgo = 'item-item-cf';
+      }
+    } else {
+      recs = recommendationService.getSimilarProducts(productId, products, limit);
+      usedAlgo = 'tfidf-cosine';
+    }
+
+    res.json({ recommendations: recs, algorithm: usedAlgo, generatedAt: new Date() });
   } catch (error) {
     console.error('Similar products error:', error);
     res.status(500).json({ error: 'Failed to get similar products' });
@@ -112,22 +163,6 @@ router.post('/search', (req, res) => {
     console.error('Search error:', error);
     res.status(500).json({ error: 'Search failed' });
   }
-});
-
-/**
- * POST /api/ai/semantic-search
- * Семантический поиск (алиас)
- */
-router.post('/semantic-search', (req, res) => {
-  const { query } = req.body;
-  
-  const results = [
-    { id: 1, name: 'CS2 - Competitive FPS', relevance: 0.98, category: 'games' },
-    { id: 2, name: 'Valorant - Tactical Shooter', relevance: 0.95, category: 'games' },
-    { id: 3, name: 'Overwatch 2 - Team-based FPS', relevance: 0.92, category: 'games' }
-  ];
-  
-  res.json({ query, results, processingTime: '124ms' });
 });
 
 // ==========================================
@@ -330,19 +365,57 @@ router.post('/generate-description', (req, res) => {
 router.get('/analytics', (req, res) => {
   try {
     const analytics = aiEngine.getAnalytics();
-    
+    const cfStats = collaborativeFilteringService.getStats();
     res.json({
       ...analytics,
-      additionalMetrics: {
-        recommendationAccuracy: 0.87,
-        searchRelevance: 0.92,
-        fraudDetectionRate: 0.98,
-        demandPredictionAccuracy: 0.89,
-        averageResponseTime: '45ms'
-      }
+      collaborativeFiltering: cfStats
     });
   } catch (error) {
     res.status(500).json({ error: 'Analytics failed' });
+  }
+});
+
+// ==========================================
+// 📐 МЕТРИКИ КАЧЕСТВА РЕКОМЕНДАЦИЙ
+// ==========================================
+
+/**
+ * GET /api/ai/metrics
+ * Precision@k, Recall@k, NDCG@k, MRR для всех алгоритмов
+ * на синтетическом held-out наборе.
+ *
+ * Query: ?ks=3,5,10&alpha=0.5&users=30
+ */
+router.get('/metrics', (req, res) => {
+  try {
+    const ks       = (req.query.ks || '3,5,10').split(',').map(s => parseInt(s)).filter(Boolean);
+    const alpha    = req.query.alpha != null ? parseFloat(req.query.alpha) : 0.5;
+    const numUsers = parseInt(req.query.users) || 30;
+    const result = evaluationService.evaluate({
+      ks, alpha, numUsers, products
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('Metrics error:', error);
+    res.status(500).json({ error: error.message || 'Evaluation failed' });
+  }
+});
+
+/**
+ * GET /api/ai/metrics/alpha-sweep
+ * Перебор α для гибрида: видно, при каком значении гибрид максимален.
+ * Query: ?k=5
+ */
+router.get('/metrics/alpha-sweep', (req, res) => {
+  try {
+    const k = parseInt(req.query.k) || 5;
+    const result = evaluationService.evaluateAlphaSweep({
+      products, ks: [k]
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('Alpha sweep error:', error);
+    res.status(500).json({ error: error.message || 'Alpha sweep failed' });
   }
 });
 

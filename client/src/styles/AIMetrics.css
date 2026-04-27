@@ -1,0 +1,178 @@
+.ai-metrics-page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+  color: var(--text);
+}
+
+.ai-metrics-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1.5rem;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.ai-metrics-header h1 {
+  margin: 0 0 0.25rem 0;
+  font-size: 1.7rem;
+}
+
+.ai-metrics-subtitle {
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.back-link {
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  border: 1px solid rgba(0, 212, 255, 0.4);
+  border-radius: 0.5rem;
+  white-space: nowrap;
+}
+.back-link:hover { background: rgba(0, 212, 255, 0.1); }
+
+.ai-metrics-controls {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 1rem 1.25rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 1.5rem;
+}
+
+.ai-metrics-controls label {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.ai-metrics-controls input[type="range"] {
+  width: 140px;
+}
+
+.ai-metrics-controls input[type="number"] {
+  width: 70px;
+  padding: 0.4rem 0.5rem;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: var(--text);
+  border-radius: 0.4rem;
+}
+
+.alpha-value {
+  font-weight: 700;
+  color: var(--primary);
+  min-width: 2.4rem;
+}
+
+.btn-run {
+  padding: 0.55rem 1.2rem;
+  background: linear-gradient(135deg, var(--primary), #00ff88);
+  color: #000;
+  border: none;
+  border-radius: 0.5rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn-run:disabled { opacity: 0.6; cursor: progress; }
+
+.ai-metrics-error {
+  padding: 0.75rem 1rem;
+  background: rgba(255, 80, 80, 0.15);
+  border: 1px solid rgba(255, 80, 80, 0.4);
+  color: #ff8080;
+  border-radius: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.methodology-box {
+  background: rgba(0, 212, 255, 0.05);
+  border-left: 3px solid var(--primary);
+  padding: 1rem 1.25rem;
+  border-radius: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+.methodology-box h3 { margin-top: 0; font-size: 1rem; }
+.methodology-box ul { margin: 0; padding-left: 1.2rem; line-height: 1.6; font-size: 0.9rem; }
+
+.metrics-table-block,
+.alpha-sweep-block {
+  margin-bottom: 1.75rem;
+}
+.metrics-table-block h2,
+.alpha-sweep-block h2 {
+  font-size: 1.1rem;
+  margin: 0 0 0.75rem 0;
+}
+.sweep-hint {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin: 0 0 0.75rem 0;
+}
+
+.metrics-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: rgba(255,255,255,0.03);
+  border-radius: 0.6rem;
+  overflow: hidden;
+}
+.metrics-table th,
+.metrics-table td {
+  text-align: left;
+  padding: 0.7rem 0.9rem;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.metrics-table th {
+  background: rgba(255,255,255,0.05);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+.metrics-table tr:last-child td { border-bottom: none; }
+
+.algo-name {
+  font-weight: 600;
+}
+
+.cell-value {
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 0.3rem;
+}
+.cell-best .cell-value {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.metric-bar {
+  height: 4px;
+  background: rgba(255,255,255,0.07);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.metric-bar-fill {
+  height: 100%;
+  background: rgba(255,255,255,0.4);
+  transition: width 0.3s;
+}
+
+.metrics-footer {
+  margin-top: 1.5rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+.sweep-table td:first-child {
+  width: 60px;
+}
