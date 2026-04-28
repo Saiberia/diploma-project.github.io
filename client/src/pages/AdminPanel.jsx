@@ -12,6 +12,7 @@ import {
   InventoryAITab,
   OrderQueueTab
 } from '../components/admin/AIAdminTabs';
+import '../styles/AIAdminTabs.css';
 
 /**
  * Админ-панель Nova Shop
@@ -310,6 +311,16 @@ function AdminPanel({ products, setProducts, user }) {
                 {activeTab === 'users' && '👥 Пользователи'}
                 {activeTab === 'analytics' && '📈 Аналитика'}
                 {activeTab === 'settings' && '⚙️ Настройки'}
+                {activeTab === 'ai-dashboard' && '🧠 AI Dashboard'}
+                {activeTab === 'ai-users' && '👤 Поведение пользователей'}
+                {activeTab === 'ai-search' && '🔍 Search Analytics'}
+                {activeTab === 'ai-chat' && '💬 Chat Analytics'}
+                {activeTab === 'ai-metrics' && '📐 Метрики рекомендаций'}
+                {activeTab === 'ai-fraud' && '🛡️ Антифрод-монитор'}
+                {activeTab === 'ai-forecast' && '📈 Прогноз спроса'}
+                {activeTab === 'ai-pricing' && '💲 Динамическое ценообразование'}
+                {activeTab === 'ai-inventory' && '📦 Inventory AI'}
+                {activeTab === 'ai-queue' && '⚡ Очередь заказов'}
               </h1>
             </div>
             <div className="header-right">
@@ -964,6 +975,18 @@ function AdminPanel({ products, setProducts, user }) {
                 </button>
               </div>
             )}
+
+            {/* === AI TABS === */}
+            {activeTab === 'ai-dashboard' && <AIDashboardTab />}
+            {activeTab === 'ai-users' && <UserBehaviorTab />}
+            {activeTab === 'ai-search' && <SearchAnalyticsTab />}
+            {activeTab === 'ai-chat' && <ChatAnalyticsTab />}
+            {activeTab === 'ai-metrics' && <RecMetricsTab />}
+            {activeTab === 'ai-fraud' && <FraudMonitorTab />}
+            {activeTab === 'ai-forecast' && <DemandForecastTab products={productsList} />}
+            {activeTab === 'ai-pricing' && <DynamicPricingTab products={productsList} />}
+            {activeTab === 'ai-inventory' && <InventoryAITab />}
+            {activeTab === 'ai-queue' && <OrderQueueTab />}
           </div>
         </main>
       </div>
