@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Header from './components/Header';
 import Hero from './components/Hero';
+import PersonalizedHome from './components/PersonalizedHome';
 import AIRecommendations from './components/AIRecommendations';
 import LiveFeed from './components/LiveFeed';
 import Chatbot from './components/Chatbot';
@@ -19,6 +20,7 @@ import AdminPanel from './pages/AdminPanel';
 import AIMetrics from './pages/AIMetrics';
 import AdminSettings from './pages/AdminSettings';
 import SteamTopup from './pages/SteamTopup';
+import { productsAPI } from './services/api';
 
 function App() {
   const [cart, setCart] = useState([]);
@@ -29,10 +31,8 @@ function App() {
 
   useEffect(() => {
     fetchData();
-    // Load user from localStorage
     const savedUser = localStorage.getItem('user');
     if (savedUser) setUser(JSON.parse(savedUser));
-    // Load cart from localStorage
     const savedCart = localStorage.getItem('cart');
     if (savedCart) setCart(JSON.parse(savedCart));
   }, []);
@@ -40,6 +40,31 @@ function App() {
   const fetchData = async () => {
     try {
       setLoading(true);
+      const [{ data: productsData }, { data: categoriesData }] = await Promise.all([
+        productsAPI.getAll(),
+        productsAPI.getCategories()
+      ]);
+      // Совместимость со spec, где Steam-карточка нужна как сервис-ссылка на /steam-topup
+      const enriched = (productsData?.data || []).map(p => {
+        if (p.id === 1) {
+          return { ...p, isService: true, serviceUrl: '/steam-topup' };
+        }
+        return p;
+      });
+      setProducts(enriched);
+      setCategories(categoriesData);
+    } catch (error) {
+      console.error('Failed to load products from API, falling back to inline mock:', error);
+      this_legacyFallback(setProducts, setCategories);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Legacy-fallback (если бекенд недоступен) — сохраняем минимальный inline-список
+  // чтобы UI не валился. Используется только если /api/products вернул ошибку.
+  const this_legacyFallback = (setProducts, setCategories) => {
+    try {
       const mockProducts = [
         // === STEAM ===
         {
@@ -467,6 +492,7 @@ function App() {
   const handleLogout = () => {
     setUser(null);
     localStorage.removeItem('user');
+    localStorage.removeItem('token');
   };
 
   return (
@@ -483,8 +509,12 @@ function App() {
           <Route path="/" element={
             <main className="main-content">
               <Hero />
+              <PersonalizedHome
+                products={products}
+                user={user}
+                onAddToCart={addToCart}
+              />
               <div className="content-container">
-                <AIRecommendations />
                 <LiveFeed />
               </div>
             </main>
@@ -524,7 +554,11 @@ function App() {
           } />
           
           <Route path="/checkout" element={
-            <Checkout cartItems={cart} user={user} />
+            <Checkout
+              cartItems={cart}
+              user={user}
+              onClearCart={() => { setCart([]); localStorage.removeItem('cart'); }}
+            />
           } />
           
           <Route path="/profile" element={

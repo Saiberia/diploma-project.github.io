@@ -25,16 +25,24 @@ class NovaAIEngine {
     this.orderHistory = new Map();   // userId → [{amount, ip, deviceId, ts}]
     this.ipOrderHistory = new Map(); // ip → [{userId, amount, ts}]
     this.flaggedTransactions = [];   // лог заблокированных
-    
-    // ML модели (эмуляция)
+
+    // Логи AI-модулей для аналитики (circular buffer)
+    this.searchLog = [];             // {query, intent, totalFound, processingMs, ts, userId}
+    this.chatLog   = [];             // {message, intent, sentiment, confidence, ts, userId}
+    this.recoLog   = [];             // {algorithm, alpha, count, ts, userId}
+    this.LOG_LIMIT = 500;
+
+    // Версии моделей (точность подтягивается online из evaluationService по запросу)
     this.models = {
-      recommendation: { accuracy: 0.87, version: '2.1' },
-      pricing: { accuracy: 0.92, version: '1.8' },
-      fraud: { accuracy: 0.98, version: '3.0' },
-      sentiment: { accuracy: 0.85, version: '1.5' },
-      demand: { accuracy: 0.89, version: '2.0' }
+      recommendation: { version: '2.1', algorithms: ['content-based', 'item-item-cf', 'hybrid'] },
+      pricing:        { version: '1.8', factors: 7 },
+      fraud:          { version: '3.0', heuristics: 6 },
+      sentiment:      { version: '1.5', method: 'lexicon' },
+      demand:         { version: '2.0', method: 'moving-avg + trend + seasonality' },
+      search:         { version: '2.0', method: 'BM25 + query-expansion + intent' },
+      chatbot:        { version: '1.2', method: 'TF-IDF intent classifier' }
     };
-    
+
     // Кэш для быстрого доступа
     this.cache = new Map();
     this.cacheExpiry = 5 * 60 * 1000; // 5 минут
@@ -169,232 +177,30 @@ class NovaAIEngine {
     this.userBehavior.set(userId, history);
   }
 
-  // ==========================================
-  // 🎯 ПЕРСОНАЛИЗИРОВАННЫЕ РЕКОМЕНДАЦИИ
-  // ==========================================
-  
   /**
-   * Генерация персонализированных рекомендаций
+   * Поиск пользователей с похожим профилем (Jaccard по категориям покупок).
+   * Используется в админке для секции «Похожие пользователи».
    */
-  async getRecommendations(userId, products, options = {}) {
-    const { limit = 6, excludePurchased = true, algorithm = 'hybrid' } = options;
-    
-    const userHistory = this.userBehavior.get(userId);
-    
-    // Если нет истории - возвращаем популярные товары
-    if (!userHistory || userHistory.purchases.length === 0) {
-      return this.getPopularProducts(products, limit);
-    }
-    
-    let recommendations = [];
-    
-    switch (algorithm) {
-      case 'collaborative':
-        recommendations = await this.collaborativeFiltering(userId, products, userHistory);
-        break;
-      case 'content':
-        recommendations = await this.contentBasedFiltering(products, userHistory);
-        break;
-      case 'hybrid':
-      default:
-        // Комбинация методов
-        const collaborative = await this.collaborativeFiltering(userId, products, userHistory);
-        const contentBased = await this.contentBasedFiltering(products, userHistory);
-        recommendations = this.mergeRecommendations(collaborative, contentBased);
-    }
-    
-    // Фильтрация уже купленных
-    if (excludePurchased) {
-      const purchasedIds = new Set(userHistory.purchases.map(p => p.productId));
-      recommendations = recommendations.filter(r => !purchasedIds.has(r.id));
-    }
-    
-    // Добавляем причину рекомендации
-    recommendations = recommendations.slice(0, limit).map(product => ({
-      ...product,
-      recommendationReason: this.getRecommendationReason(product, userHistory),
-      confidence: this.calculateConfidence(product, userHistory)
-    }));
-    
-    return recommendations;
-  }
-  
-  /**
-   * Коллаборативная фильтрация
-   */
-  async collaborativeFiltering(userId, products, userHistory) {
-    // Находим похожих пользователей
-    const similarUsers = this.findSimilarUsers(userId);
-    
-    // Собираем товары, которые купили похожие пользователи
-    const recommendedIds = new Set();
-    similarUsers.forEach(([similarUserId, similarity]) => {
-      const theirHistory = this.userBehavior.get(similarUserId);
-      if (theirHistory) {
-        theirHistory.purchases.forEach(p => {
-          if (p.productId) recommendedIds.add(p.productId);
-        });
-      }
-    });
-    
-    return products
-      .filter(p => recommendedIds.has(p.id))
-      .map(p => ({
-        ...p,
-        score: 0.8 + Math.random() * 0.2,
-        method: 'collaborative'
-      }))
-      .sort((a, b) => b.score - a.score);
-  }
-  
-  /**
-   * Контентная фильтрация
-   */
-  async contentBasedFiltering(products, userHistory) {
-    const preferences = userHistory.preferences || {};
-    
-    return products.map(product => {
-      let score = 0;
-      
-      // Соответствие категории
-      if (preferences.favoriteCategories?.[product.category]) {
-        score += 40 * (preferences.favoriteCategories[product.category] / 10);
-      }
-      
-      // Соответствие ценовому диапазону
-      if (preferences.priceRange) {
-        if (product.price >= preferences.priceRange.min * 0.7 &&
-            product.price <= preferences.priceRange.max * 1.3) {
-          score += 25;
-        }
-      }
-      
-      // Рейтинг товара
-      score += (product.rating || 4) * 5;
-      
-      // Популярность
-      score += Math.min(20, (product.reviews || 0) / 100);
-      
-      return {
-        ...product,
-        score: Math.min(100, score),
-        method: 'content'
-      };
-    }).sort((a, b) => b.score - a.score);
-  }
-  
-  /**
-   * Объединение рекомендаций
-   */
-  mergeRecommendations(collaborative, contentBased) {
-    const scoreMap = new Map();
-    
-    // Коллаборативные с весом 0.6
-    collaborative.forEach((item, index) => {
-      const existing = scoreMap.get(item.id) || { ...item, totalScore: 0, count: 0 };
-      existing.totalScore += (item.score || 0) * 0.6;
-      existing.count++;
-      scoreMap.set(item.id, existing);
-    });
-    
-    // Контентные с весом 0.4
-    contentBased.forEach((item, index) => {
-      const existing = scoreMap.get(item.id) || { ...item, totalScore: 0, count: 0 };
-      existing.totalScore += (item.score || 0) * 0.4;
-      existing.count++;
-      scoreMap.set(item.id, existing);
-    });
-    
-    return Array.from(scoreMap.values())
-      .map(item => ({
-        ...item,
-        score: item.totalScore / item.count,
-        method: 'hybrid'
-      }))
-      .sort((a, b) => b.score - a.score);
-  }
-  
-  /**
-   * Поиск похожих пользователей
-   */
-  findSimilarUsers(userId) {
+  findSimilarUsers(userId, minSimilarity = 0.3, limit = 10) {
     const userHistory = this.userBehavior.get(userId);
     if (!userHistory) return [];
-    
-    const userCategories = new Set(
-      userHistory.purchases.map(p => p.category)
-    );
-    
+
+    const userCategories = new Set(userHistory.purchases.map(p => p.category).filter(Boolean));
+    if (userCategories.size === 0) return [];
+
     const similarities = [];
-    
     this.userBehavior.forEach((otherHistory, otherUserId) => {
       if (otherUserId === userId) return;
-      
-      const otherCategories = new Set(
-        otherHistory.purchases.map(p => p.category)
-      );
-      
-      // Jaccard similarity
+      const otherCategories = new Set(otherHistory.purchases.map(p => p.category).filter(Boolean));
+      if (otherCategories.size === 0) return;
+
       const intersection = [...userCategories].filter(c => otherCategories.has(c)).length;
       const union = new Set([...userCategories, ...otherCategories]).size;
-      const similarity = union > 0 ? intersection / union : 0;
-      
-      if (similarity > 0.3) {
-        similarities.push([otherUserId, similarity]);
-      }
+      const sim = union > 0 ? intersection / union : 0;
+      if (sim >= minSimilarity) similarities.push([otherUserId, sim]);
     });
-    
-    return similarities.sort((a, b) => b[1] - a[1]).slice(0, 10);
-  }
-  
-  /**
-   * Популярные товары (fallback)
-   */
-  getPopularProducts(products, limit) {
-    return products
-      .sort((a, b) => (b.reviews || 0) - (a.reviews || 0))
-      .slice(0, limit)
-      .map(p => ({
-        ...p,
-        recommendationReason: 'Популярно среди покупателей',
-        confidence: 0.75
-      }));
-  }
-  
-  /**
-   * Генерация причины рекомендации
-   */
-  getRecommendationReason(product, userHistory) {
-    const reasons = [];
-    
-    if (userHistory.preferences?.favoriteCategories?.[product.category]) {
-      reasons.push(`Вам нравится категория ${product.category}`);
-    }
-    
-    if (product.rating >= 4.5) {
-      reasons.push('Высокий рейтинг покупателей');
-    }
-    
-    if (product.badge === 'popular' || product.badge === 'hit') {
-      reasons.push('Хит продаж');
-    }
-    
-    return reasons[0] || 'Подобрано для вас AI';
-  }
-  
-  /**
-   * Расчёт уверенности рекомендации
-   */
-  calculateConfidence(product, userHistory) {
-    let confidence = 0.7;
-    
-    if (userHistory.preferences?.favoriteCategories?.[product.category]) {
-      confidence += 0.1;
-    }
-    if (product.rating >= 4.5) confidence += 0.05;
-    if (product.reviews > 1000) confidence += 0.05;
-    
-    return Math.min(0.98, confidence);
+
+    return similarities.sort((a, b) => b[1] - a[1]).slice(0, limit);
   }
 
   // ==========================================
@@ -1021,8 +827,138 @@ class NovaAIEngine {
         .reduce((sum, u) => sum + u.views.length + u.purchases.length, 0),
       models: this.models,
       cacheSize: this.cache.size,
+      logs: {
+        search: this.searchLog.length,
+        chat:   this.chatLog.length,
+        reco:   this.recoLog.length,
+        flaggedTransactions: this.flaggedTransactions.length
+      },
       timestamp: new Date()
     };
+  }
+
+  // ==========================================
+  // 📝 ЛОГИ AI-МОДУЛЕЙ
+  // ==========================================
+
+  _pushLog(buffer, entry) {
+    buffer.push({ ...entry, ts: Date.now() });
+    if (buffer.length > this.LOG_LIMIT) buffer.shift();
+  }
+
+  logSearch({ query, intent, totalFound, processingMs, userId = 'anon' }) {
+    this._pushLog(this.searchLog, { query, intent, totalFound, processingMs, userId });
+  }
+
+  logChat({ message, intent, sentiment, confidence, userId = 'anon' }) {
+    this._pushLog(this.chatLog, { message, intent, sentiment, confidence, userId });
+  }
+
+  logReco({ algorithm, alpha, count, userId = 'anon' }) {
+    this._pushLog(this.recoLog, { algorithm, alpha, count, userId });
+  }
+
+  /**
+   * Агрегаты по поисковому логу для админки.
+   */
+  getSearchAnalytics() {
+    const total = this.searchLog.length;
+    if (!total) {
+      return { total: 0, topQueries: [], zeroResultQueries: [], intents: {}, avgProcessingMs: 0, recent: [] };
+    }
+
+    const queryCount = new Map();
+    const zeroResults = new Map();
+    const intentCount = new Map();
+    let totalMs = 0;
+
+    for (const e of this.searchLog) {
+      const q = (e.query || '').trim().toLowerCase();
+      if (q) queryCount.set(q, (queryCount.get(q) || 0) + 1);
+      if (q && (e.totalFound || 0) === 0) zeroResults.set(q, (zeroResults.get(q) || 0) + 1);
+      if (e.intent) intentCount.set(e.intent, (intentCount.get(e.intent) || 0) + 1);
+      totalMs += e.processingMs || 0;
+    }
+
+    const topQueries = [...queryCount.entries()]
+      .sort((a, b) => b[1] - a[1]).slice(0, 15)
+      .map(([query, count]) => ({ query, count }));
+    const zeroResultQueries = [...zeroResults.entries()]
+      .sort((a, b) => b[1] - a[1]).slice(0, 10)
+      .map(([query, count]) => ({ query, count }));
+    const intents = Object.fromEntries(intentCount);
+
+    return {
+      total,
+      topQueries,
+      zeroResultQueries,
+      intents,
+      avgProcessingMs: parseFloat((totalMs / total).toFixed(1)),
+      recent: this.searchLog.slice(-20).reverse()
+    };
+  }
+
+  /**
+   * Агрегаты по логу чатбота.
+   */
+  getChatAnalytics() {
+    const total = this.chatLog.length;
+    if (!total) {
+      return { total: 0, intents: {}, sentiment: {}, avgConfidence: 0, recent: [] };
+    }
+
+    const intentCount = new Map();
+    const sentimentCount = new Map();
+    let totalConf = 0;
+    let confSamples = 0;
+
+    for (const e of this.chatLog) {
+      if (e.intent) intentCount.set(e.intent, (intentCount.get(e.intent) || 0) + 1);
+      if (e.sentiment) sentimentCount.set(e.sentiment, (sentimentCount.get(e.sentiment) || 0) + 1);
+      if (typeof e.confidence === 'number') {
+        totalConf += e.confidence;
+        confSamples++;
+      }
+    }
+
+    return {
+      total,
+      intents: Object.fromEntries(
+        [...intentCount.entries()].sort((a, b) => b[1] - a[1])
+      ),
+      sentiment: Object.fromEntries(sentimentCount),
+      avgConfidence: confSamples ? parseFloat((totalConf / confSamples).toFixed(3)) : 0,
+      recent: this.chatLog.slice(-20).reverse()
+    };
+  }
+
+  /**
+   * Список профилей пользователей с компактным резюме (для админки).
+   */
+  getUserProfiles(limit = 50) {
+    const list = [];
+    this.userBehavior.forEach((history, userId) => {
+      const prefs = history.preferences || {};
+      const topCat = Object.entries(prefs.favoriteCategories || {})
+        .sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+      list.push({
+        userId,
+        views: history.views.length,
+        purchases: history.purchases.length,
+        searches: history.searches.length,
+        loyaltyScore: Math.round(prefs.loyaltyScore || 0),
+        avgOrderValue: Math.round(prefs.avgOrderValue || 0),
+        topCategory: topCat,
+        favoriteCategories: prefs.favoriteCategories || {},
+        priceRange: prefs.priceRange && Number.isFinite(prefs.priceRange.min)
+          ? { min: prefs.priceRange.min, max: prefs.priceRange.max }
+          : null,
+        lastActive: history.lastActive
+      });
+    });
+    return list
+      .sort((a, b) => (b.views + b.purchases * 2) - (a.views + a.purchases * 2))
+      .slice(0, limit);
   }
 }
 

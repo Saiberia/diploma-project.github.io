@@ -1,15 +1,35 @@
 import { useState, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import {
+  AIDashboardTab,
+  UserBehaviorTab,
+  SearchAnalyticsTab,
+  ChatAnalyticsTab,
+  RecMetricsTab,
+  FraudMonitorTab,
+  DemandForecastTab,
+  DynamicPricingTab,
+  InventoryAITab,
+  OrderQueueTab
+} from '../components/admin/AIAdminTabs';
 
 /**
- * Улучшенная админ-панель Nova Shop
- * - Расширенная статистика с графиками
- * - Полное управление товарами
- * - Управление заказами
- * - Управление пользователями
- * - Отчёты по Steam-пополнениям
- * 
- * - Настройки магазина
+ * Админ-панель Nova Shop
+ *
+ * Структура:
+ *   1. Базовый бизнес-блок: дашборд, товары, заказы, Steam, юзеры, аналитика, настройки
+ *   2. AI-блок (Frontend Intelligence — тема пользователя):
+ *      - AI Dashboard (общий статус)
+ *      - User Behavior (поведенческие профили)
+ *      - Search Analytics
+ *      - Chat Analytics
+ *      - Recommendation Metrics (Precision/Recall/NDCG/MRR)
+ *   3. AI-блок (Backend Intelligence — тема друга):
+ *      - Fraud Monitor
+ *      - Demand Forecast
+ *      - Dynamic Pricing
+ *      - Inventory AI
+ *      - Order Queue (приоритизация)
  */
 
 function AdminPanel({ products, setProducts, user }) {
@@ -227,12 +247,46 @@ function AdminPanel({ products, setProducts, user }) {
               <span className="nav-icon">📈</span>
               <span className="nav-text">Аналитика</span>
             </button>
-            <button 
+            <button
               className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`}
               onClick={() => setActiveTab('settings')}
             >
               <span className="nav-icon">⚙️</span>
               <span className="nav-text">Настройки</span>
+            </button>
+
+            <div className="nav-section-title">🔵 Frontend Intelligence</div>
+            <button className={`nav-item ${activeTab === 'ai-dashboard'   ? 'active' : ''}`} onClick={() => setActiveTab('ai-dashboard')}>
+              <span className="nav-icon">🧠</span><span className="nav-text">AI Dashboard</span>
+            </button>
+            <button className={`nav-item ${activeTab === 'ai-users'       ? 'active' : ''}`} onClick={() => setActiveTab('ai-users')}>
+              <span className="nav-icon">👤</span><span className="nav-text">Поведение</span>
+            </button>
+            <button className={`nav-item ${activeTab === 'ai-search'      ? 'active' : ''}`} onClick={() => setActiveTab('ai-search')}>
+              <span className="nav-icon">🔍</span><span className="nav-text">Search Analytics</span>
+            </button>
+            <button className={`nav-item ${activeTab === 'ai-chat'        ? 'active' : ''}`} onClick={() => setActiveTab('ai-chat')}>
+              <span className="nav-icon">💬</span><span className="nav-text">Chat Analytics</span>
+            </button>
+            <button className={`nav-item ${activeTab === 'ai-metrics'     ? 'active' : ''}`} onClick={() => setActiveTab('ai-metrics')}>
+              <span className="nav-icon">📐</span><span className="nav-text">Метрики Reco</span>
+            </button>
+
+            <div className="nav-section-title">🟢 Backend Intelligence</div>
+            <button className={`nav-item ${activeTab === 'ai-fraud'       ? 'active' : ''}`} onClick={() => setActiveTab('ai-fraud')}>
+              <span className="nav-icon">🛡️</span><span className="nav-text">Антифрод</span>
+            </button>
+            <button className={`nav-item ${activeTab === 'ai-forecast'    ? 'active' : ''}`} onClick={() => setActiveTab('ai-forecast')}>
+              <span className="nav-icon">📈</span><span className="nav-text">Прогноз спроса</span>
+            </button>
+            <button className={`nav-item ${activeTab === 'ai-pricing'     ? 'active' : ''}`} onClick={() => setActiveTab('ai-pricing')}>
+              <span className="nav-icon">💲</span><span className="nav-text">Dynamic Pricing</span>
+            </button>
+            <button className={`nav-item ${activeTab === 'ai-inventory'   ? 'active' : ''}`} onClick={() => setActiveTab('ai-inventory')}>
+              <span className="nav-icon">📦</span><span className="nav-text">Inventory AI</span>
+            </button>
+            <button className={`nav-item ${activeTab === 'ai-queue'       ? 'active' : ''}`} onClick={() => setActiveTab('ai-queue')}>
+              <span className="nav-icon">⚡</span><span className="nav-text">Очередь заказов</span>
             </button>
           </nav>
 

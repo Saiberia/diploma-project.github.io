@@ -4,6 +4,7 @@ import recommendationService from '../services/recommendationService.js';
 import collaborativeFilteringService from '../services/collaborativeFilteringService.js';
 import hybridRecommender from '../services/hybridRecommender.js';
 import evaluationService from '../services/evaluationService.js';
+import inventoryAIService from '../services/inventoryAIService.js';
 import products from '../data/products.js';
 
 const router = express.Router();
@@ -79,6 +80,13 @@ router.post('/recommendations/personalized', (req, res) => {
         break;
     }
 
+    aiEngine.logReco({
+      algorithm: usedAlgo,
+      alpha:     algorithm === 'hybrid' ? (alpha ?? hybridRecommender.getAlpha()) : null,
+      count:     recs.length,
+      userId:    req.body.userId
+    });
+
     res.json({
       recommendations: recs,
       algorithm: usedAlgo,
@@ -147,17 +155,27 @@ router.get('/recommendations/popular', (req, res) => {
  */
 router.post('/search', (req, res) => {
   try {
-    const { query, limit = 20 } = req.body;
-    
+    const { query, limit = 20, userId } = req.body;
+
     if (!query) {
       return res.status(400).json({ error: 'Query required' });
     }
 
+    const t0 = process.hrtime.bigint();
     const searchResults = aiEngine.smartSearch(query, products, { limit });
-    
+    const processingMs = Number(process.hrtime.bigint() - t0) / 1e6;
+
+    aiEngine.logSearch({
+      query,
+      intent:       searchResults.intent,
+      totalFound:   searchResults.totalFound,
+      processingMs: parseFloat(processingMs.toFixed(2)),
+      userId
+    });
+
     res.json({
       ...searchResults,
-      processingTime: `${Math.floor(Math.random() * 50 + 20)}ms`
+      processingTime: `${processingMs.toFixed(2)}ms`
     });
   } catch (error) {
     console.error('Search error:', error);
@@ -297,32 +315,49 @@ router.post('/analyze-sentiment', (req, res) => {
  * AI чатбот
  */
 router.post('/chat', (req, res) => {
-  const { message, conversationId } = req.body;
-  
+  const { message, conversationId, intent: clientIntent, confidence, userId } = req.body;
+
   let response = 'Чем могу помочь? 🎮';
+  let detectedIntent = clientIntent || 'unknown';
   const messageLower = message?.toLowerCase() || '';
-  
-  // Анализ настроения
+
+  // Анализ настроения (lexicon-based)
   const sentiment = aiEngine.analyzeSentiment(message || '');
-  
-  // Умные ответы
+
+  // Умные ответы (детектор намерений на стороне сервера для случаев,
+  // когда клиентский классификатор не уверен)
   if (messageLower.includes('steam') || messageLower.includes('стим')) {
     response = '💳 Пополнение Steam доступно от 100₽. Моментальное зачисление! Перейти в раздел Steam?';
+    detectedIntent = clientIntent || 'product_steam';
   } else if (messageLower.includes('fortnite') || messageLower.includes('v-bucks') || messageLower.includes('вбакс')) {
     response = '🎮 V-Bucks для Fortnite! 1000 V-Bucks = 799₽. Нужна помощь с покупкой?';
+    detectedIntent = clientIntent || 'product_vbucks';
   } else if (messageLower.includes('оплат') || messageLower.includes('карт')) {
     response = '💳 Принимаем: банковские карты, СБП, ЮMoney. Все платежи защищены!';
+    detectedIntent = clientIntent || 'payment';
   } else if (messageLower.includes('доставк') || messageLower.includes('когда')) {
     response = '⚡ Доставка моментальная! Цифровые товары приходят за 1-5 минут после оплаты.';
+    detectedIntent = clientIntent || 'delivery';
   } else if (messageLower.includes('привет') || messageLower.includes('здравств')) {
     response = '👋 Привет! Я AI-помощник Nova Shop. Подскажу по любому товару или помогу с заказом!';
+    detectedIntent = clientIntent || 'greeting';
   } else if (sentiment.sentiment === 'negative') {
     response = '😔 Понимаю ваше беспокойство! Опишите проблему подробнее, и я постараюсь помочь.';
+    detectedIntent = clientIntent || 'negative_feedback';
   }
-  
+
+  aiEngine.logChat({
+    message,
+    intent:    detectedIntent,
+    sentiment: sentiment.sentiment,
+    confidence: typeof confidence === 'number' ? confidence : null,
+    userId
+  });
+
   res.json({
     conversationId: conversationId || 'conv_' + Date.now(),
     message: response,
+    intent: detectedIntent,
     sentiment: sentiment.sentiment,
     timestamp: new Date()
   });
@@ -362,13 +397,41 @@ router.post('/generate-description', (req, res) => {
  * GET /api/ai/analytics
  * AI аналитика
  */
+// Кэш реальных метрик качества (тяжело пересчитывать на каждый запрос)
+let _cachedQualityMetrics = null;
+let _cachedQualityAt = 0;
+const QUALITY_TTL = 5 * 60 * 1000; // 5 минут
+
+function getQualityMetricsCached() {
+  if (_cachedQualityMetrics && Date.now() - _cachedQualityAt < QUALITY_TTL) {
+    return _cachedQualityMetrics;
+  }
+  try {
+    const result = evaluationService.evaluate({
+      ks: [5], alpha: 0.5, numUsers: 30, products
+    });
+    const summary = {};
+    for (const [algo, data] of Object.entries(result.results || {})) {
+      const m = data.metrics?.['@5'];
+      if (m) summary[algo] = m;
+    }
+    _cachedQualityMetrics = summary;
+    _cachedQualityAt = Date.now();
+    return summary;
+  } catch {
+    return {};
+  }
+}
+
 router.get('/analytics', (req, res) => {
   try {
     const analytics = aiEngine.getAnalytics();
     const cfStats = collaborativeFilteringService.getStats();
+    const quality = getQualityMetricsCached();
     res.json({
       ...analytics,
-      collaborativeFiltering: cfStats
+      collaborativeFiltering: cfStats,
+      qualityMetrics: quality
     });
   } catch (error) {
     res.status(500).json({ error: 'Analytics failed' });
@@ -417,6 +480,102 @@ router.get('/metrics/alpha-sweep', (req, res) => {
     console.error('Alpha sweep error:', error);
     res.status(500).json({ error: error.message || 'Alpha sweep failed' });
   }
+});
+
+// ==========================================
+// 📦 INVENTORY AI (для backend-AI темы)
+// ==========================================
+
+/**
+ * GET /api/ai/inventory/alerts
+ * Все товары с риском stockout — отсортированы по серьёзности.
+ */
+router.get('/inventory/alerts', (req, res) => {
+  try {
+    const alerts = inventoryAIService.getAlerts(products);
+    const summary = inventoryAIService.getSummary(products);
+    res.json({ alerts, summary, generatedAt: new Date() });
+  } catch (e) {
+    console.error('Inventory alerts error:', e);
+    res.status(500).json({ error: 'Inventory alerts failed' });
+  }
+});
+
+/**
+ * GET /api/ai/inventory/forecast/:productId
+ * Полный прогноз по одному товару.
+ */
+router.get('/inventory/forecast/:productId', (req, res) => {
+  const product = products.find(p => String(p.id) === String(req.params.productId));
+  if (!product) return res.status(404).json({ error: 'Product not found' });
+  try {
+    const report = inventoryAIService.forecastStockout(product, {
+      days:     parseInt(req.query.days) || 30,
+      leadTime: parseInt(req.query.leadTime) || 3
+    });
+    res.json(report);
+  } catch (e) {
+    res.status(500).json({ error: 'Forecast failed' });
+  }
+});
+
+/**
+ * GET /api/ai/inventory/summary
+ * Сводка по складу для дашборда.
+ */
+router.get('/inventory/summary', (req, res) => {
+  res.json(inventoryAIService.getSummary(products));
+});
+
+/**
+ * GET /api/ai/analytics/search
+ * Агрегированная аналитика по поисковым запросам.
+ */
+router.get('/analytics/search', (req, res) => {
+  res.json(aiEngine.getSearchAnalytics());
+});
+
+/**
+ * GET /api/ai/analytics/chat
+ * Агрегированная аналитика по чат-боту.
+ */
+router.get('/analytics/chat', (req, res) => {
+  res.json(aiEngine.getChatAnalytics());
+});
+
+/**
+ * GET /api/ai/users
+ * Список профилей пользователей с компактным резюме (для админки).
+ */
+router.get('/users', (req, res) => {
+  const limit = parseInt(req.query.limit) || 50;
+  res.json({
+    profiles: aiEngine.getUserProfiles(limit),
+    total: aiEngine.getAnalytics().totalUsers
+  });
+});
+
+/**
+ * GET /api/ai/users/:userId
+ * Полный профиль пользователя + список «похожих» (Jaccard).
+ */
+router.get('/users/:userId', (req, res) => {
+  const { userId } = req.params;
+  const history = aiEngine.userBehavior.get(userId);
+  if (!history) return res.status(404).json({ error: 'User not found' });
+
+  const similar = aiEngine.findSimilarUsers(userId);
+  res.json({
+    userId,
+    history: {
+      views:     history.views.slice(-30),
+      purchases: history.purchases.slice(-30),
+      searches:  history.searches.slice(-30),
+      lastActive: history.lastActive
+    },
+    preferences: history.preferences || {},
+    similarUsers: similar.map(([id, similarity]) => ({ userId: id, similarity: parseFloat(similarity.toFixed(3)) }))
+  });
 });
 
 /**

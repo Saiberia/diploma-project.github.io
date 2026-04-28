@@ -372,3 +372,45 @@
     padding: 0.75rem 0.5rem;
   }
 }
+
+/* === Fraud / error blocks === */
+.fraud-alert {
+  background: linear-gradient(135deg, #fee2e2, #fecaca);
+  border: 2px solid #ef4444;
+  border-radius: 12px;
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+  color: #7f1d1d;
+}
+.fraud-alert h3 { margin: 0 0 .5rem; color: #991b1b; }
+.fraud-alert p { margin: .25rem 0; }
+.fraud-alert details { margin-top: .75rem; }
+.fraud-alert details summary { cursor: pointer; font-weight: 600; }
+.fraud-alert ul { margin: .5rem 0 0 1.25rem; }
+.fraud-alert code {
+  background: rgba(0,0,0,.08); padding: 1px 6px; border-radius: 4px; font-size: .85rem;
+}
+.fraud-alert .hint {
+  font-size: .85rem; color: #7f1d1d; margin-top: .75rem; opacity: .85;
+}
+
+.checkout-error {
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  color: #92400e;
+  font-weight: 600;
+}
+
+.fraud-status {
+  margin-top: 1rem;
+  padding: .75rem 1rem;
+  border-radius: 8px;
+  font-size: .9rem;
+}
+.fraud-status.fraud-low    { background: #d1fae5; color: #065f46; border: 1px solid #10b981; }
+.fraud-status.fraud-medium { background: #fef3c7; color: #92400e; border: 1px solid #f59e0b; }
+.fraud-status.fraud-high   { background: #fee2e2; color: #7f1d1d; border: 1px solid #ef4444; }
+.fraud-status .warn { margin: .5rem 0 0; font-weight: 600; }

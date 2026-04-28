@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { authAPI } from '../services/api';
 
 function UserProfile({ user, onLogin, onLogout }) {
   const [isRegistering, setIsRegistering] = useState(false);
@@ -43,35 +44,29 @@ function UserProfile({ user, onLogin, onLogout }) {
           setLoading(false);
           return;
         }
-        
-        const newUser = {
-          id: 'user_' + Math.random().toString(36).substr(2, 9),
-          username: formData.username,
-          email: formData.email,
-          role: formData.email.includes('admin') ? 'admin' : 'user',
-          createdAt: new Date().toISOString()
-        };
-        
-        onLogin(newUser);
+        const { data } = await authAPI.register({
+          email:    formData.email,
+          password: formData.password,
+          username: formData.username
+        });
+        if (data.token) localStorage.setItem('token', data.token);
+        onLogin(data.user);
       } else {
         if (!formData.email || !formData.password) {
           setError('Введите email и пароль');
           setLoading(false);
           return;
         }
-
-        const mockUser = {
-          id: 'user_' + Math.random().toString(36).substr(2, 9),
-          username: formData.email.split('@')[0],
-          email: formData.email,
-          role: formData.email.includes('admin') ? 'admin' : 'user',
-          createdAt: new Date().toISOString()
-        };
-        
-        onLogin(mockUser);
+        const { data } = await authAPI.login({
+          email:    formData.email,
+          password: formData.password
+        });
+        if (data.token) localStorage.setItem('token', data.token);
+        onLogin(data.user);
       }
     } catch (err) {
-      setError('Ошибка. Попробуйте снова.');
+      const msg = err.response?.data?.error || 'Ошибка. Попробуйте снова.';
+      setError(msg);
     } finally {
       setLoading(false);
     }
