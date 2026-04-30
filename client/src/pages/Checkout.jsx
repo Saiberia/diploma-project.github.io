@@ -1,61 +1,106 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../styles/Checkout.css';
+import { ordersAPI, aiAPI } from '../services/api';
 
-function Checkout({ cartItems, user }) {
+function Checkout({ cartItems, user, onClearCart }) {
   const navigate = useNavigate();
   const [paymentMethod, setPaymentMethod] = useState('card');
   const [formData, setFormData] = useState({
     email: user?.email || '',
-    name: user?.username || '',
+    name:  user?.username || '',
     gameAccount: '',
     notes: ''
   });
-  const [orderCreated, setOrderCreated] = useState(false);
+  const [orderResult, setOrderResult] = useState(null); // {order, fraudCheck}
+  const [error, setError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const total = cartItems.reduce((sum, item) => sum + (item.price * (item.quantity || 1)), 0);
 
   const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
+    setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    // Mock order creation
-    const order = {
-      id: 'ord_' + Math.random().toString(36).substr(2, 9),
-      items: cartItems,
-      total: total,
-      customer: formData,
-      paymentMethod: paymentMethod,
-      status: 'pending',
-      createdAt: new Date().toISOString()
-    };
+    if (submitting || cartItems.length === 0) return;
+    setSubmitting(true);
+    setError(null);
 
-    console.log('Order created:', order);
-    setOrderCreated(true);
+    try {
+      // Логируем покупку для рекомендательного движка
+      const purchasedIds = cartItems.map(i => i.id);
+      const prevPurchased = JSON.parse(localStorage.getItem('purchasedProducts') || '[]');
+      const updatedPurchased = [...new Set([...purchasedIds, ...prevPurchased])].slice(0, 50);
+      localStorage.setItem('purchasedProducts', JSON.stringify(updatedPurchased));
 
-    setTimeout(() => {
-      navigate('/');
-    }, 3000);
+      // Реальный POST в backend (там сработает антифрод-движок)
+      const { data } = await ordersAPI.create({
+        productIds:   cartItems.map(i => ({ productId: i.id, quantity: i.quantity || 1 })),
+        totalPrice:   total,
+        paymentMethod,
+        userId:       user?.id || 'guest',
+        customerInfo: formData
+      });
+
+      // Трекаем покупку в AI-движке
+      if (user?.id) {
+        for (const item of cartItems) {
+          aiAPI.track(user.id, 'purchase', {
+            productId: item.id,
+            category:  item.category,
+            price:     item.price
+          }).catch(() => {});
+        }
+      }
+
+      setOrderResult(data);
+      if (onClearCart) onClearCart();
+
+      setTimeout(() => navigate('/orders'), 5000);
+    } catch (err) {
+      const status = err.response?.status;
+      const body   = err.response?.data;
+      if (status === 403 && body?.error?.includes('fraud')) {
+        setError({
+          type: 'fraud',
+          riskScore: body.riskScore,
+          triggers:  body.triggers,
+          recommendation: body.recommendation
+        });
+      } else {
+        setError({ type: 'generic', message: body?.error || 'Ошибка оформления заказа. Попробуйте ещё раз.' });
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  if (orderCreated) {
+  if (orderResult) {
+    const { order, fraudCheck } = orderResult;
     return (
       <div className="checkout-page">
         <div className="order-success">
           <div className="success-icon">✓</div>
           <h1>Заказ успешно создан!</h1>
-          <p>Спасибо за покупку</p>
           <div className="order-details">
-            <p>Номер заказа: <strong>ORD-{Date.now()}</strong></p>
-            <p>Сумма: <strong>{total} ₽</strong></p>
+            <p>Номер заказа: <strong>{order.id}</strong></p>
+            <p>Сумма: <strong>{order.totalPrice} ₽</strong></p>
+            <p>Статус: <strong>{order.status}</strong></p>
           </div>
-          <p className="redirect-message">Переход на главную через 3 сек...</p>
+
+          {fraudCheck && (
+            <div className={`fraud-status fraud-${fraudCheck.riskLevel}`}>
+              <strong>🛡️ Антифрод-проверка:</strong>{' '}
+              risk = {fraudCheck.riskScore}/100 ({fraudCheck.riskLevel})
+              {fraudCheck.requiresVerification && (
+                <p className="warn">⚠️ Требуется дополнительная верификация по SMS/Email</p>
+              )}
+            </div>
+          )}
+
+          <p className="redirect-message">Переход в «Мои заказы» через 5 сек…</p>
         </div>
       </div>
     );
@@ -66,14 +111,35 @@ function Checkout({ cartItems, user }) {
       <div className="checkout-container">
         <h1>Оформление заказа</h1>
 
+        {error && error.type === 'fraud' && (
+          <div className="fraud-alert">
+            <h3>🚫 Транзакция заблокирована антифрод-системой</h3>
+            <p>Risk score: <strong>{error.riskScore}/100</strong></p>
+            <p>{error.recommendation}</p>
+            <details>
+              <summary>Сработавшие триггеры ({error.triggers?.length || 0})</summary>
+              <ul>
+                {(error.triggers || []).map((t, i) => <li key={i}><code>{t}</code></li>)}
+              </ul>
+            </details>
+            <p className="hint">
+              Для тестирования: создайте 3 заказа подряд (velocity user), 5 заказов с одного IP за час, или один крупный (&gt;5×ср.чека).
+            </p>
+          </div>
+        )}
+
+        {error && error.type === 'generic' && (
+          <div className="checkout-error">{error.message}</div>
+        )}
+
         <div className="checkout-layout">
           <form className="checkout-form" onSubmit={handleSubmit}>
             <section className="form-section">
               <h2>1️⃣ Ваши данные</h2>
               <div className="form-group">
                 <label>Email</label>
-                <input 
-                  type="email" 
+                <input
+                  type="email"
                   name="email"
                   value={formData.email}
                   onChange={handleChange}
@@ -84,8 +150,8 @@ function Checkout({ cartItems, user }) {
 
               <div className="form-group">
                 <label>Имя / Никнейм</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   name="name"
                   value={formData.name}
                   onChange={handleChange}
@@ -96,8 +162,8 @@ function Checkout({ cartItems, user }) {
 
               <div className="form-group">
                 <label>Игровой аккаунт (если требуется)</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   name="gameAccount"
                   value={formData.gameAccount}
                   onChange={handleChange}
@@ -110,9 +176,9 @@ function Checkout({ cartItems, user }) {
               <h2>2️⃣ Способ оплаты</h2>
               <div className="payment-options">
                 <label className={`payment-option ${paymentMethod === 'card' ? 'selected' : ''}`}>
-                  <input 
-                    type="radio" 
-                    value="card" 
+                  <input
+                    type="radio"
+                    value="card"
                     checked={paymentMethod === 'card'}
                     onChange={(e) => setPaymentMethod(e.target.value)}
                   />
@@ -121,9 +187,9 @@ function Checkout({ cartItems, user }) {
                 </label>
 
                 <label className={`payment-option ${paymentMethod === 'telegram' ? 'selected' : ''}`}>
-                  <input 
-                    type="radio" 
-                    value="telegram" 
+                  <input
+                    type="radio"
+                    value="telegram"
                     checked={paymentMethod === 'telegram'}
                     onChange={(e) => setPaymentMethod(e.target.value)}
                   />
@@ -132,9 +198,9 @@ function Checkout({ cartItems, user }) {
                 </label>
 
                 <label className={`payment-option ${paymentMethod === 'crypto' ? 'selected' : ''}`}>
-                  <input 
-                    type="radio" 
-                    value="crypto" 
+                  <input
+                    type="radio"
+                    value="crypto"
                     checked={paymentMethod === 'crypto'}
                     onChange={(e) => setPaymentMethod(e.target.value)}
                   />
@@ -146,7 +212,7 @@ function Checkout({ cartItems, user }) {
 
             <section className="form-section">
               <h2>3️⃣ Комментарий</h2>
-              <textarea 
+              <textarea
                 name="notes"
                 value={formData.notes}
                 onChange={handleChange}
@@ -155,8 +221,8 @@ function Checkout({ cartItems, user }) {
               ></textarea>
             </section>
 
-            <button type="submit" className="btn-submit">
-              Оплатить {total} ₽ →
+            <button type="submit" className="btn-submit" disabled={submitting || cartItems.length === 0}>
+              {submitting ? 'Обработка…' : `Оплатить ${total} ₽ →`}
             </button>
           </form>
 
@@ -198,6 +264,7 @@ function Checkout({ cartItems, user }) {
                 <p>✓ Быстрая обработка</p>
                 <p>✓ Безопасная оплата</p>
                 <p>✓ Гарантия</p>
+                <p>🛡️ Антифрод-защита</p>
               </div>
             </div>
           </aside>

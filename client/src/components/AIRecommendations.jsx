@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../styles/AIRecommendations.css';
-
-const API = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+import { aiAPI } from '../services/api';
 
 // Чтение истории просмотров из localStorage
 function getViewHistory() {
@@ -36,12 +35,10 @@ function AIRecommendations({ currentProductId = null, title = 'AI Рекомен
   const [mode, setMode]       = useState('personalized'); // 'similar' | 'personalized'
 
   useEffect(() => {
-    const controller = new AbortController();
-    loadRecommendations(controller.signal);
-    return () => controller.abort();
+    loadRecommendations();
   }, [currentProductId]);
 
-  async function loadRecommendations(signal) {
+  async function loadRecommendations() {
     setLoading(true);
     setError(null);
 
@@ -51,23 +48,15 @@ function AIRecommendations({ currentProductId = null, title = 'AI Рекомен
       if (currentProductId) {
         // На странице товара — похожие
         setMode('similar');
-        const res = await fetch(
-          `${API}/ai/recommendations/similar/${currentProductId}?limit=4`,
-          { signal }
-        );
-        data = await res.json();
+        const res = await aiAPI.getSimilar(currentProductId, { limit: 4 });
+        data = res.data;
       } else {
         // На главной — персонализированные
         setMode('personalized');
         const viewedIds    = getViewHistory();
         const purchasedIds = getPurchaseHistory();
-        const res = await fetch(`${API}/ai/recommendations/personalized`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ viewedIds, purchasedIds, limit: 4 }),
-          signal,
-        });
-        data = await res.json();
+        const res = await aiAPI.getPersonalized(viewedIds, purchasedIds, { limit: 4 });
+        data = res.data;
       }
 
       setRecommendations(data.recommendations || []);

@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import '../styles/AISearch.css';
+import { aiAPI } from '../services/api';
 
 const CATEGORY_ICONS = {
   steam: '💳',
@@ -17,7 +18,7 @@ const INTENT_LABELS = {
   new: { icon: '✨', text: 'Показываю новинки' }
 };
 
-function AISearch() {
+function AISearch({ userId } = {}) {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchData, setSearchData] = useState(null);
@@ -43,7 +44,7 @@ function AISearch() {
       const res = await fetch('/api/ai/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, limit: 6 }),
+        body: JSON.stringify({ query, limit: 6, userId }),
         signal: ctrl.signal
       });
       if (!res.ok) throw new Error('Search failed');
@@ -78,6 +79,9 @@ function AISearch() {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (searchQuery.trim()) {
+      if (userId) {
+        aiAPI.track(userId, 'search', { query: searchQuery.trim() }).catch(() => {});
+      }
       navigate(`/catalog?search=${encodeURIComponent(searchQuery)}`);
       setShowResults(false);
     }

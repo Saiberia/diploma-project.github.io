@@ -5,17 +5,23 @@ function Catalog({ products, loading, onAddToCart }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const categoryFromUrl = searchParams.get('category');
+  const searchFromUrl = searchParams.get('search');
   
   const [selectedCategory, setSelectedCategory] = useState(categoryFromUrl || 'all');
   const [sortBy, setSortBy] = useState('popular');
   const [priceRange, setPriceRange] = useState([0, 5000]);
   const [notification, setNotification] = useState(null);
+  const [textQuery, setTextQuery] = useState(searchFromUrl || '');
 
   useEffect(() => {
     if (categoryFromUrl) {
       setSelectedCategory(categoryFromUrl);
     }
   }, [categoryFromUrl]);
+
+  useEffect(() => {
+    setTextQuery(searchFromUrl || '');
+  }, [searchFromUrl]);
 
   const categories = [
     { id: 'all',          name: 'Все товары', icon: '🎮' },
@@ -33,9 +39,23 @@ function Catalog({ products, loading, onAddToCart }) {
     items: 'https://cdn.akamai.steamstatic.com/steam/apps/730/header.jpg'
   };
 
-  let filtered = products.filter(p => 
-    selectedCategory === 'all' || p.category === selectedCategory
-  ).filter(p => p.price >= priceRange[0] && p.price <= priceRange[1]);
+  let filtered = products
+    .filter(p => selectedCategory === 'all' || p.category === selectedCategory)
+    .filter(p => p.price >= priceRange[0] && p.price <= priceRange[1]);
+
+  if (textQuery && textQuery.trim()) {
+    const q = textQuery.trim().toLowerCase();
+    filtered = filtered.filter(p => {
+      const hay = [
+        p.name,
+        p.description,
+        p.category,
+        p.genre,
+        ...(p.tags || [])
+      ].filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(q);
+    });
+  }
 
   if (sortBy === 'price-asc') {
     filtered = [...filtered].sort((a, b) => a.price - b.price);

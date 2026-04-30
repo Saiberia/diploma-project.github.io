@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import AISearch from './AISearch';
 
@@ -10,8 +10,7 @@ import AISearch from './AISearch';
  * - Градиенты и глоу эффекты
  */
 
-function Hero() {
-  const navigate = useNavigate();
+function Hero({ user } = {}) {
   const [showHowItWorks, setShowHowItWorks] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const [animatedStats, setAnimatedStats] = useState({ orders: 0, satisfaction: 0, market: 0 });
@@ -56,74 +55,6 @@ function Hero() {
     { id: 'mobilelegends', name: 'Mobile Legends', icon: '⚔️', count: '25+' },
     { id: 'genshin', name: 'Genshin Impact', icon: '✨', count: '20+' },
     { id: 'honkai', name: 'Honkai', icon: '🌟', count: '15+' }
-  ];
-
-  // Популярные товары
-  const popularProducts = [
-    { 
-      id: 1, 
-      name: 'Смена региона Steam',
-      game: 'Steam',
-      gameIcon: '💳',
-      type: 'На аккаунт',
-      desc: 'Смена региона на Казахстан или Аргентину',
-      price: 277,
-      badge: '🔥 Хит',
-      link: '/steam-topup'
-    },
-    { 
-      id: 2, 
-      name: '2800 V-Bucks',
-      game: 'Fortnite',
-      gameIcon: '🎯',
-      type: 'Внутриигровая валюта',
-      desc: 'Для покупки скинов и боевого пропуска',
-      price: 1278,
-      link: '/product/2'
-    },
-    { 
-      id: 3, 
-      name: 'Пополнение Steam',
-      game: 'Steam', 
-      gameIcon: '💳',
-      type: 'На кошелёк',
-      desc: 'Любая сумма от 100 до 50000 ₽',
-      price: 100,
-      priceLabel: 'от',
-      badge: '⭐ Популярное',
-      link: '/steam-topup'
-    },
-    { 
-      id: 4, 
-      name: 'CS2 Prime Status',
-      game: 'Steam',
-      gameIcon: '🎮',
-      type: 'Улучшение аккаунта',
-      desc: 'Prime статус для Counter-Strike 2',
-      price: 1199,
-      link: '/product/5'
-    },
-    { 
-      id: 5, 
-      name: 'Robux 1000',
-      game: 'Roblox',
-      gameIcon: '🟥',
-      type: 'Внутриигровая валюта',
-      desc: 'Робуксы на ваш аккаунт',
-      price: 749,
-      link: '/product/6'
-    },
-    { 
-      id: 6, 
-      name: 'Кристаллы Genesis',
-      game: 'Genshin Impact',
-      gameIcon: '✨',
-      type: 'Внутриигровая валюта',
-      desc: '6480 кристаллов для гачи',
-      price: 1299,
-      badge: '✨ Новое',
-      link: '/product/8'
-    }
   ];
 
   return (
@@ -182,7 +113,7 @@ function Hero() {
           
           {/* Поиск */}
           <div className="hero-search-area animate-fade-up delay-1">
-            <AISearch />
+            <AISearch userId={user?.id} />
           </div>
 
           {/* Быстрые действия */}
@@ -254,43 +185,6 @@ function Hero() {
               <span className="game-chip-icon">{cat.icon}</span>
               <span className="game-chip-name">{cat.name}</span>
               <span className="game-chip-count">{cat.count}</span>
-            </Link>
-          ))}
-        </div>
-      </div>
-
-      {/* Популярные товары */}
-      <div className="section-container animate-fade-up delay-5">
-        <div className="section-header">
-          <h2><span className="section-icon">🔥</span> Популярное</h2>
-          <Link to="/catalog" className="see-all-link">Смотреть все →</Link>
-        </div>
-        <div className="products-grid-modern">
-          {popularProducts.map((product, idx) => (
-            <Link 
-              key={product.id}
-              to={product.link}
-              className="product-card-modern"
-              style={{ animationDelay: `${0.08 * idx}s` }}
-            >
-              {product.badge && (
-                <div className="product-badge-modern">{product.badge}</div>
-              )}
-              <div className="product-header">
-                <span className="product-game-icon">{product.gameIcon}</span>
-                <span className="product-game-name">{product.game}</span>
-                <span className="product-type">{product.type}</span>
-              </div>
-              <h3 className="product-title">{product.name}</h3>
-              <p className="product-desc">{product.desc}</p>
-              <div className="product-footer">
-                <div className="product-price-modern">
-                  {product.priceLabel && <span className="price-from">{product.priceLabel}</span>}
-                  <span className="price-amount">{product.price}</span>
-                  <span className="price-currency">₽</span>
-                </div>
-                <span className="product-arrow">→</span>
-              </div>
             </Link>
           ))}
         </div>
