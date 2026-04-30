@@ -63,6 +63,7 @@ router.post('/create', (req, res) => {
   order.priority      = priorityResult.score;
   order.priorityLevel = priorityResult.level;
   order.priorityReasons = priorityResult.reasons;
+  order.priorityComponents = priorityResult.components;
 
   orders.push(order);
 
@@ -75,6 +76,14 @@ router.post('/create', (req, res) => {
   }
 
   res.json({ order, fraudCheck, priority: priorityResult, message: 'Order created successfully' });
+});
+
+/**
+ * GET /api/orders/all
+ * Все заказы (для админки). В учебном стенде — in-memory.
+ */
+router.get('/all', (req, res) => {
+  res.json(orders.slice(-200).reverse());
 });
 
 router.get('/history', (req, res) => {

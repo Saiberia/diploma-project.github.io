@@ -220,16 +220,51 @@ router.get('/dynamic-price/:productId', (req, res) => {
 router.post('/calculate-price', (req, res) => {
   try {
     const { productId, basePrice, context = {} } = req.body;
-    
+
     if (!productId || !basePrice) {
       return res.status(400).json({ error: 'productId and basePrice required' });
     }
-    
+
     const priceData = aiEngine.calculateDynamicPrice(productId, basePrice, context);
     res.json(priceData);
   } catch (error) {
     res.status(500).json({ error: 'Pricing calculation failed' });
   }
+});
+
+/**
+ * GET /api/ai/pricing-context/:productId
+ * Возвращает реальный контекст по товару:
+ *  - текущий остаток на складе (из products.js)
+ *  - спрос, рассчитанный по последним 7 дням истории продаж
+ *  - текущее время/день недели
+ * Используется UI калькулятора, чтобы показать «откуда цифры».
+ */
+router.get('/pricing-context/:productId', (req, res) => {
+  try {
+    const { productId } = req.params;
+    const ctx = aiEngine.getPricingContext(productId, products);
+    res.json(ctx);
+  } catch (error) {
+    console.error('Pricing context error:', error);
+    res.status(500).json({ error: 'Pricing context failed' });
+  }
+});
+
+/**
+ * GET /api/ai/holidays
+ * Календарь праздников на ближайшие N дней (default 30).
+ * UI прогноза подсвечивает эти даты на графике.
+ */
+router.get('/holidays', (req, res) => {
+  const days = Math.min(parseInt(req.query.days) || 30, 365);
+  const startStr = req.query.from;
+  const start = startStr ? new Date(startStr) : new Date();
+  res.json({
+    from: start.toISOString().split('T')[0],
+    days,
+    holidays: aiEngine.getHolidayCalendar(days, start)
+  });
 });
 
 // ==========================================

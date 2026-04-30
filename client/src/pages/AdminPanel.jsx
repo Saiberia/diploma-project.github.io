@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   AIDashboardTab,
@@ -13,6 +13,7 @@ import {
   OrderQueueTab
 } from '../components/admin/AIAdminTabs';
 import '../styles/AIAdminTabs.css';
+import { ordersAPI } from '../services/api';
 
 /**
  * Админ-панель Nova Shop
@@ -41,7 +42,29 @@ function AdminPanel({ products, setProducts, user }) {
   const setProductsList = setProducts || (() => {});
   const [searchQuery, setSearchQuery] = useState('');
   const [notification, setNotification] = useState(null);
-  
+
+  // Реальные заказы из backend (для того чтобы "верхняя" часть админки не была заглушкой)
+  const [realOrders, setRealOrders] = useState([]);
+  const [realOrdersLoadedAt, setRealOrdersLoadedAt] = useState(null);
+  const [realOrdersError, setRealOrdersError] = useState(null);
+
+  const loadRealOrders = async () => {
+    try {
+      setRealOrdersError(null);
+      const { data } = await ordersAPI.getAll();
+      setRealOrders(Array.isArray(data) ? data : []);
+      setRealOrdersLoadedAt(new Date());
+    } catch {
+      setRealOrdersError('Не удалось загрузить реальные заказы (backend).');
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'orders' && !realOrdersLoadedAt) {
+      loadRealOrders();
+    }
+  }, [activeTab]);
+
   // Форма товара
   const [newProduct, setNewProduct] = useState({
     name: '',
@@ -147,8 +170,11 @@ function AdminPanel({ products, setProducts, user }) {
   const stats = useMemo(() => {
     const totalProducts = productsList.length;
     const totalValue = productsList.reduce((sum, p) => sum + (p.price * (p.stock || 1)), 0);
-    const completedOrders = mockOrders.filter(o => o.status === 'completed').length;
-    const totalRevenue = mockOrders.filter(o => o.status === 'completed').reduce((sum, o) => sum + o.total, 0);
+    const ordersSource = realOrders.length ? realOrders : mockOrders;
+    const completedOrders = ordersSource.filter(o => o.status === 'completed').length;
+    const totalRevenue = ordersSource
+      .filter(o => o.status === 'completed')
+      .reduce((sum, o) => sum + (o.totalPrice ?? o.total ?? 0), 0);
     const steamRevenue = steamTopups.filter(t => t.status === 'completed').reduce((sum, t) => sum + t.commission, 0);
     const activeUsers = mockUsers.filter(u => u.status !== 'blocked').length;
     const vipUsers = mockUsers.filter(u => u.status === 'vip').length;
@@ -169,7 +195,7 @@ function AdminPanel({ products, setProducts, user }) {
       weekOrders: 42,
       monthOrders: 156
     };
-  }, [productsList, mockOrders, mockUsers, steamTopups]);
+  }, [productsList, mockOrders, realOrders, mockUsers, steamTopups]);
 
   // Фильтрация товаров
   const filteredProducts = productsList.filter(p => 
@@ -337,6 +363,16 @@ function AdminPanel({ products, setProducts, user }) {
             {/* DASHBOARD */}
             {activeTab === 'dashboard' && (
               <div className="dashboard-content">
+                <div className="ai-section-title" style={{ marginTop: 0 }}>
+                  <h2>📦 Реальные данные (backend)</h2>
+                  <button className="btn-link" onClick={loadRealOrders}>↻ Обновить</button>
+                </div>
+                <p className="ai-hint" style={{ marginTop: 0 }}>
+                  Если backend перезапускался, логи/очередь/заказы в учебном стенде очищаются (in-memory). Нажмите «Обновить» после тестов.
+                  {realOrdersLoadedAt && <> Последняя загрузка: <strong>{realOrdersLoadedAt.toLocaleTimeString('ru-RU')}</strong>.</>}
+                </p>
+                {realOrdersError && <div className="ai-error">{realOrdersError}</div>}
+
                 {/* Stats Grid */}
                 <div className="stats-grid-4">
                   <div className="stat-card primary">
@@ -405,14 +441,14 @@ function AdminPanel({ products, setProducts, user }) {
                       <button className="btn-link" onClick={() => setActiveTab('orders')}>Все →</button>
                     </div>
                     <div className="orders-mini-list">
-                      {mockOrders.slice(0, 4).map(order => (
+                      {(realOrders.length ? realOrders : mockOrders).slice(0, 4).map(order => (
                         <div key={order.id} className="order-mini">
                           <div className="order-info">
                             <span className="order-id">{order.id}</span>
-                            <span className="order-user">{order.username}</span>
+                            <span className="order-user">{order.username || order.userId || 'user'}</span>
                           </div>
                           <div className="order-details">
-                            <span className="order-amount">{order.total} ₽</span>
+                            <span className="order-amount">{(order.totalPrice ?? order.total ?? 0)} ₽</span>
                             <span className={`order-status status-${order.status}`}>
                               {order.status === 'completed' && '✓'}
                               {order.status === 'processing' && '⏳'}
@@ -635,6 +671,14 @@ function AdminPanel({ products, setProducts, user }) {
             {/* ORDERS */}
             {activeTab === 'orders' && (
               <div className="orders-content">
+                <div className="ai-section-title" style={{ marginTop: 0 }}>
+                  <h2>🛒 Заказы (реальные из backend)</h2>
+                  <button className="btn-link" onClick={loadRealOrders}>↻ Обновить</button>
+                </div>
+                <p className="ai-hint" style={{ marginTop: 0 }}>
+                  Если список пуст — создайте заказ в магазине (Checkout), затем вернитесь сюда и нажмите «Обновить».
+                </p>
+
                 <div className="orders-stats">
                   <div className="order-stat">
                     <span className="os-value">{stats.completedOrders}</span>
@@ -664,27 +708,29 @@ function AdminPanel({ products, setProducts, user }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {mockOrders.map(order => (
+                      {(realOrders.length ? realOrders : mockOrders).map(order => (
                         <tr key={order.id} className={`order-row status-${order.status}`}>
                           <td className="order-id-cell">
                             <strong>{order.id}</strong>
                           </td>
                           <td className="customer-cell">
                             <div className="customer-info">
-                              <span className="customer-name">{order.username}</span>
-                              <span className="customer-email">{order.customer}</span>
+                              <span className="customer-name">{order.username || order.userId || 'user'}</span>
+                              <span className="customer-email">{order.customer || order.customerInfo?.email || '—'}</span>
                             </div>
                           </td>
                           <td className="products-cell">
-                            {order.products.join(', ')}
+                            {order.products ? order.products.join(', ') : (order.productNames || []).join(', ') || '—'}
                           </td>
                           <td className="amount-cell">
-                            <strong>{order.total} ₽</strong>
+                            <strong>{(order.totalPrice ?? order.total ?? 0)} ₽</strong>
                           </td>
                           <td>
                             <span className={`status-badge status-${order.status}`}>
                               {order.status === 'completed' && '✓ Выполнен'}
                               {order.status === 'processing' && '⏳ В обработке'}
+                              {order.status === 'pending' && '⏳ Ожидает'}
+                              {order.status === 'pending_verification' && '🛡️ Верификация'}
                               {order.status === 'cancelled' && '✕ Отменён'}
                             </span>
                           </td>
@@ -692,8 +738,8 @@ function AdminPanel({ products, setProducts, user }) {
                           <td className="actions-cell">
                             <button
                               className="btn-icon"
-                              title={`${order.products.join(', ')} — ${order.total} ₽`}
-                              onClick={() => showNotification(`Заказ ${order.id}: ${order.products.join(', ')} — ${order.total} ₽`)}
+                              title={`${(order.products ? order.products.join(', ') : (order.productNames || []).join(', ')) || '—'} — ${(order.totalPrice ?? order.total ?? 0)} ₽`}
+                              onClick={() => showNotification(`Заказ ${order.id}: ${(order.products ? order.products.join(', ') : (order.productNames || []).join(', ')) || '—'} — ${(order.totalPrice ?? order.total ?? 0)} ₽`)}
                             >
                               👁️
                             </button>

@@ -187,7 +187,7 @@ export default function PersonalizedHome({ products, user, onAddToCart }) {
           <p>
             {hasHistory
               ? 'Витрина перестроена под ваши предпочтения. AI рекомендует:'
-              : 'Просмотрите пару товаров — витрина адаптируется под вас.'}
+              : 'Сейчас показываем популярное и новинки. Посмотрите пару товаров — витрина адаптируется под вас.'}
           </p>
           {recsAlgorithm && (
             <div className="ph-meta-badges">
@@ -225,7 +225,8 @@ export default function PersonalizedHome({ products, user, onAddToCart }) {
 
       {!loading && !hasHistory && (
         <>
-          {renderSection('Популярное прямо сейчас', popular, { icon: '🔥' })}
+          {renderSection('Популярное прямо сейчас', popular, { icon: '🔥', algoBadge: 'Popularity baseline' })}
+          {renderSection('Новинки', products.filter(p => p.badge === 'new').slice(0, 8), { icon: '🆕', link: '/catalog' })}
           <div className="ph-empty-hint">
             <p>Откройте любой товар или сделайте покупку — и витрина перестроится под вас.</p>
             <Link to="/catalog" className="ph-cta">Перейти в каталог →</Link>

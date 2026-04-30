@@ -1,8 +1,9 @@
 import { useParams, Link } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import AIRecommendations, { trackProductView } from '../components/AIRecommendations';
+import { aiAPI } from '../services/api';
 
-function ProductDetail({ products, onAddToCart }) {
+function ProductDetail({ products, user, onAddToCart }) {
   const { id } = useParams();
   const product = products.find(p => p.id === parseInt(id));
   const [quantity, setQuantity] = useState(1);
@@ -10,8 +11,19 @@ function ProductDetail({ products, onAddToCart }) {
   const [selectedTab, setSelectedTab] = useState('description');
 
   useEffect(() => {
-    if (product) trackProductView(product.id);
-  }, [product?.id]);
+    if (!product) return;
+    trackProductView(product.id);
+
+    // Поведенческий трек на backend — чтобы в админке наполнялась вкладка Behavior.
+    if (user?.id) {
+      aiAPI.track(user.id, 'view', {
+        productId: product.id,
+        category: product.category,
+        price: product.price,
+        game: product.genre || null
+      }).catch(() => {});
+    }
+  }, [product?.id, user?.id]);
 
   if (!product) {
     return (

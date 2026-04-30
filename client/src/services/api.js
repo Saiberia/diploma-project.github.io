@@ -32,6 +32,7 @@ export const authAPI = {
 export const ordersAPI = {
   create:     (data) => api.post('/orders/create', data),
   getHistory: ()     => api.get('/orders/history'),
+  getAll:     ()     => api.get('/orders/all'),
   getById:    (id)   => api.get(`/orders/${id}`),
   getQueue:   ()     => api.get('/orders/queue')
 };
@@ -60,8 +61,10 @@ export const aiAPI = {
   getDynamicPrice:      (productId, params = {}) =>
     api.get(`/ai/dynamic-price/${productId}`, { params }),
   calculatePrice:       (data) => api.post('/ai/calculate-price', data),
+  getPricingContext:    (productId) => api.get(`/ai/pricing-context/${productId}`),
   getDemandForecast:    (productId, days = 14) =>
     api.get(`/ai/demand-forecast/${productId}`, { params: { days } }),
+  getHolidayCalendar:   (days = 30) => api.get('/ai/holidays', { params: { days } }),
   verifyTransaction:    (data) => api.post('/ai/verify-transaction', data),
   getFraudLog:          (limit = 50) => api.get('/ai/fraud-log', { params: { limit } }),
 

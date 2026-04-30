@@ -1,16 +1,20 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, useRef, useEffect } from 'react';
 import { smartFilter } from '../utils/searchUtils';
+import { aiAPI } from '../services/api';
 
-function Header({ user, cartCount, onLogout, onSearch, products = [] }) {
+function Header({ user, cartCount, onLogout, onSearch, products = [], theme, onToggleTheme }) {
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [showSearch, setShowSearch] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef(null);
   const searchRef = useRef(null);
+  const debounceRef = useRef(null);
+  const abortRef = useRef(null);
 
   const onlineCount = Math.floor(Math.random() * 150) + 50;
 
@@ -29,6 +33,35 @@ function Header({ user, cartCount, onLogout, onSearch, products = [] }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const performSearch = async (query) => {
+    const q = query.trim();
+    if (!q) {
+      setSearchResults([]);
+      setShowSearch(false);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    setShowSearch(true);
+
+    if (abortRef.current) abortRef.current.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
+    try {
+      // Серверный поиск: логирует запросы для AI Search Analytics в админке
+      const { data } = await aiAPI.search(q, 6, user?.id);
+      setSearchResults(data?.results || []);
+    } catch (err) {
+      // Фолбэк: локальный BM25 (без логирования на backend)
+      const results = smartFilter(products, q, 6);
+      setSearchResults(results);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
   const handleSearch = (e) => {
     const query = e.target.value;
     setSearchQuery(query);
@@ -39,14 +72,16 @@ function Header({ user, cartCount, onLogout, onSearch, products = [] }) {
       return;
     }
 
-    const results = smartFilter(products, query, 6);
-    setSearchResults(results);
-    setShowSearch(results.length > 0);
-
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => performSearch(query), 200);
     if (onSearch) onSearch(query);
   };
 
   const handleSearchClick = (productId) => {
+    const q = searchQuery.trim();
+    if (q && user?.id) {
+      aiAPI.track(user.id, 'search', { query: q }).catch(() => {});
+    }
     setSearchQuery('');
     setShowSearch(false);
     navigate(`/product/${productId}`);
@@ -83,9 +118,16 @@ function Header({ user, cartCount, onLogout, onSearch, products = [] }) {
             </div>
 
             {/* Search Results */}
-            {showSearch && searchResults.length > 0 && (
+            {showSearch && (isSearching || searchResults.length > 0) && (
               <div className="search-results-dropdown">
-                {searchResults.map(product => (
+                {isSearching && (
+                  <div className="search-result-item">
+                    <div className="search-result-content">
+                      <div className="search-result-name">Ищем…</div>
+                    </div>
+                  </div>
+                )}
+                {!isSearching && searchResults.map(product => (
                   <div
                     key={product.id}
                     className="search-result-item"
@@ -114,6 +156,17 @@ function Header({ user, cartCount, onLogout, onSearch, products = [] }) {
               <span className="online-dot"></span>
               {onlineCount}
             </div>
+
+            {/* Theme toggle */}
+            <button
+              type="button"
+              className="theme-toggle"
+              onClick={() => onToggleTheme?.()}
+              title={theme === 'light' ? 'Переключить на тёмную тему' : 'Переключить на светлую тему'}
+              aria-label="Переключить тему"
+            >
+              {theme === 'light' ? '☀️' : '🌙'}
+            </button>
 
             {/* Cart */}
             <Link to="/cart" className="cart-btn">

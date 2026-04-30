@@ -340,8 +340,13 @@ export function UserBehaviorTab() {
 
 export function SearchAnalyticsTab() {
   const [data, setData] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   useEffect(() => {
     aiAPI.getSearchAnalytics().then(r => setData(r.data));
+  }, [refreshKey]);
+  useEffect(() => {
+    const t = setInterval(() => setRefreshKey(k => k + 1), 5000);
+    return () => clearInterval(t);
   }, []);
   if (!data) return <div className="ai-loading">Загрузка…</div>;
   if (!data.total) {
@@ -349,12 +354,17 @@ export function SearchAnalyticsTab() {
       <div className="ai-empty-state">
         <h3>📭 Поисковых запросов ещё не было</h3>
         <p>Откройте главную и попробуйте поиск — здесь появятся топ запросов, intent-распределение и среднее время BM25.</p>
+        <button onClick={() => setRefreshKey(k => k + 1)} className="btn-link">↻ Обновить</button>
       </div>
     );
   }
 
   return (
     <div className="ai-search-analytics">
+      <div className="ai-section-title" style={{ marginTop: 0 }}>
+        <h2>🔍 Search Analytics</h2>
+        <button onClick={() => setRefreshKey(k => k + 1)} className="btn-link">↻ Обновить</button>
+      </div>
       <div className="ai-stats-row">
         <Stat label="Всего запросов" value={data.total} />
         <Stat label="Avg время BM25" value={`${data.avgProcessingMs} ms`} accent="emerald" />
@@ -446,8 +456,13 @@ export function SearchAnalyticsTab() {
 
 export function ChatAnalyticsTab() {
   const [data, setData] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   useEffect(() => {
     aiAPI.getChatAnalytics().then(r => setData(r.data));
+  }, [refreshKey]);
+  useEffect(() => {
+    const t = setInterval(() => setRefreshKey(k => k + 1), 5000);
+    return () => clearInterval(t);
   }, []);
   if (!data) return <div className="ai-loading">Загрузка…</div>;
   if (!data.total) {
@@ -455,15 +470,22 @@ export function ChatAnalyticsTab() {
       <div className="ai-empty-state">
         <h3>📭 Диалогов с чат-ботом пока не было</h3>
         <p>Откройте чат-бот в правом нижнем углу сайта — статистика по intents, sentiment и confidence появится здесь.</p>
+        <button onClick={() => setRefreshKey(k => k + 1)} className="btn-link">↻ Обновить</button>
       </div>
     );
   }
 
   return (
     <div className="ai-chat-analytics">
+      <div className="ai-section-title" style={{ marginTop: 0 }}>
+        <h2>💬 Chat Analytics</h2>
+        <button onClick={() => setRefreshKey(k => k + 1)} className="btn-link">↻ Обновить</button>
+      </div>
       <div className="ai-stats-row">
         <Stat label="Всего сообщений" value={data.total} />
         <Stat label="Avg confidence" value={data.avgConfidence} accent="emerald" />
+        <Stat label="Unknown" value={`${data.unknownRate != null ? Math.round(data.unknownRate * 100) : 0}%`} accent="rose" />
+        <Stat label="Low conf" value={`${data.lowConfidenceRate != null ? Math.round(data.lowConfidenceRate * 100) : 0}%`} accent="amber" />
         <Stat label="Уникальных intents" value={Object.keys(data.intents).length} />
         <Stat label="Уникальных sentiments" value={Object.keys(data.sentiment).length} />
       </div>
@@ -497,6 +519,24 @@ export function ChatAnalyticsTab() {
           </div>
         </section>
       </div>
+
+      {data.topUnresolved && data.topUnresolved.length > 0 && (
+        <section>
+          <h3>🧩 Топ “непонятых” фраз (fallback)</h3>
+          <table className="ai-rank-table">
+            <tbody>
+              {data.topUnresolved.map((x, i) => (
+                <tr key={x.message}>
+                  <td className="rank">#{i + 1}</td>
+                  <td className="query"><code>{x.message}</code></td>
+                  <td className="count zero">{x.count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="ai-hint">💡 Это “корпус” для расширения примеров/синонимов и снижения unknown-rate.</p>
+        </section>
+      )}
 
       <section>
         <h3>🕐 Последние 20 сообщений</h3>
@@ -709,6 +749,8 @@ export function DemandForecastTab({ products }) {
   const [days, setDays] = useState(14);
   const [forecast, setForecast] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [showHistory, setShowHistory] = useState(true);
+  const [holidayCalendar, setHolidayCalendar] = useState([]);
 
   const productOptions = useMemo(() => {
     const seeded = ['steam-100', 'steam-50', 'steam-20', 'valorant-bp', 'xbox-pass'];
@@ -722,8 +764,12 @@ export function DemandForecastTab({ products }) {
   const load = async () => {
     setLoading(true);
     try {
-      const { data } = await aiAPI.getDemandForecast(productId, days);
-      setForecast(data);
+      const [{ data: f }, holidays] = await Promise.all([
+        aiAPI.getDemandForecast(productId, days),
+        aiAPI.getHolidayCalendar(Math.max(days, 60)).then(r => r.data.holidays).catch(() => [])
+      ]);
+      setForecast(f);
+      setHolidayCalendar(holidays);
     } finally {
       setLoading(false);
     }
@@ -732,6 +778,12 @@ export function DemandForecastTab({ products }) {
   useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
 
   const maxVal = forecast?.forecast?.reduce((m, d) => Math.max(m, d.upperBound), 0) || 1;
+
+  const upcomingHolidays = useMemo(() => {
+    if (!holidayCalendar?.length) return [];
+    const todayStr = new Date().toISOString().split('T')[0];
+    return holidayCalendar.filter(h => h.date >= todayStr).slice(0, 8);
+  }, [holidayCalendar]);
 
   return (
     <div className="ai-forecast-tab">
@@ -742,6 +794,10 @@ export function DemandForecastTab({ products }) {
           </select>
         </label>
         <label>Дней: <input type="number" min="3" max="60" value={days} onChange={e => setDays(parseInt(e.target.value) || 14)} /></label>
+        <label className="toggle-checkbox">
+          <input type="checkbox" checked={showHistory} onChange={e => setShowHistory(e.target.checked)} />
+          <span>Показывать историю</span>
+        </label>
         <button onClick={load} disabled={loading} className="btn-primary">{loading ? 'Считаем…' : 'Прогноз'}</button>
       </div>
 
@@ -749,26 +805,109 @@ export function DemandForecastTab({ products }) {
         <>
           <div className="ai-stats-row">
             <Stat label="Точек данных" value={forecast.dataPoints} />
-            <Stat label="Avg/день" value={forecast.summary.avgDaily} />
-            <Stat label="Avg 7 дн" value={forecast.summary.avg7DaySales} />
-            <Stat label="Тренд" value={forecast.summary.trend} accent={forecast.summary.trend === 'rising' ? 'emerald' : forecast.summary.trend === 'falling' ? 'rose' : ''} />
+            <Stat label="Avg/день (прогноз)" value={forecast.summary.avgDaily} />
+            <Stat label="Avg 7 дн (история)" value={forecast.summary.avg7DaySales} />
+            <Stat label="Тренд" value={`${forecast.summary.trend} (×${forecast.summary.trendValue})`} accent={forecast.summary.trend === 'rising' ? 'emerald' : forecast.summary.trend === 'falling' ? 'rose' : ''} />
             <Stat label="Σ за горизонт" value={forecast.summary.totalPredicted} />
+            <Stat label="Праздников впереди" value={forecast.holidays?.length || 0} accent={forecast.holidays?.length ? 'amber' : ''} />
           </div>
 
-          <div className="ai-forecast-chart">
-            {forecast.forecast.map((d, i) => {
-              const h = (d.predictedDemand / maxVal) * 100;
-              const upH = (d.upperBound / maxVal) * 100;
-              return (
-                <div key={i} className="ai-forecast-bar">
-                  <div className="ai-forecast-upper" style={{ height: `${upH}%` }} title={`upper ${d.upperBound}`} />
-                  <div className="ai-forecast-main"  style={{ height: `${h}%` }}   title={`predicted ${d.predictedDemand}`} />
-                  <span className="ai-forecast-day">{d.dayName}</span>
-                  <span className="ai-forecast-val">{d.predictedDemand}</span>
-                </div>
-              );
-            })}
+          <div className="ai-forecast-method">
+            🧮 Формула: <code>{forecast.method || 'MA(7) × trend × weekday × holiday'}</code>
+            <span className="ai-forecast-method-hint">avg7 = {forecast.summary.avg7DaySales} · trend = ×{forecast.summary.trendValue}</span>
           </div>
+
+          {/* График — двойной: история + прогноз */}
+          <div className="ai-forecast-chart-wrap">
+            {showHistory && forecast.historyTail?.length > 0 && (
+              <div className="ai-forecast-chart history">
+                {forecast.historyTail.map((d, i) => {
+                  const h = (d.quantity / maxVal) * 100;
+                  return (
+                    <div key={`h-${i}`} className="ai-forecast-bar history">
+                      <div className="ai-forecast-main history" style={{ height: `${h}%` }} title={`${d.date}: ${d.quantity}`} />
+                      <span className="ai-forecast-day">{d.date.slice(5)}</span>
+                      <span className="ai-forecast-val">{d.quantity}</span>
+                    </div>
+                  );
+                })}
+                <div className="ai-forecast-divider" title="Граница: история ←|→ прогноз" />
+              </div>
+            )}
+            <div className="ai-forecast-chart">
+              {forecast.forecast.map((d, i) => {
+                const h = (d.predictedDemand / maxVal) * 100;
+                const upH = (d.upperBound / maxVal) * 100;
+                const isHoliday = !!d.holiday;
+                return (
+                  <div key={i} className={`ai-forecast-bar ${isHoliday ? 'is-holiday' : ''} ${d.isWeekend ? 'is-weekend' : ''}`}>
+                    {isHoliday && (
+                      <span className="ai-forecast-holiday-marker" title={`${d.holiday.name} ×${d.holiday.multiplier}`}>
+                        {d.holiday.icon}
+                      </span>
+                    )}
+                    <div className="ai-forecast-upper" style={{ height: `${upH}%` }} title={`upper ${d.upperBound}`} />
+                    <div className="ai-forecast-main"  style={{ height: `${h}%` }}   title={
+                      `${d.date} (${d.dayName})\n` +
+                      `predicted ${d.predictedDemand} · conf ${d.confidence}\n` +
+                      `base ${d.factors.base} × trend ${d.factors.trend} × weekday ${d.factors.weekday} × holiday ${d.factors.holiday}` +
+                      (d.holiday ? `\n🎉 ${d.holiday.name}` : '')
+                    } />
+                    <span className="ai-forecast-day">{d.dayName}</span>
+                    <span className="ai-forecast-val">{d.predictedDemand}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="ai-forecast-legend">
+            <span className="leg leg-history">▍ История</span>
+            <span className="leg leg-forecast">▍ Прогноз</span>
+            <span className="leg leg-weekend">▍ Выходной (×1.20–1.25)</span>
+            <span className="leg leg-holiday">🎉 Праздник (см. иконку)</span>
+          </div>
+
+          {forecast.holidays?.length > 0 && (
+            <section className="ai-forecast-holidays-detail">
+              <h3>🗓 Праздники в горизонте прогноза</h3>
+              <table className="ai-rank-table">
+                <thead>
+                  <tr><th>Дата</th><th>День</th><th>Событие</th><th>×demand</th></tr>
+                </thead>
+                <tbody>
+                  {forecast.holidays.map(h => (
+                    <tr key={h.date}>
+                      <td><code>{h.date}</code></td>
+                      <td>{h.dayName}</td>
+                      <td>{h.icon} {h.name}</td>
+                      <td className="num"><strong>×{h.multiplier.toFixed(2)}</strong></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          )}
+
+          {upcomingHolidays.length > 0 && upcomingHolidays.length !== (forecast.holidays?.length || 0) && (
+            <section className="ai-forecast-holidays-detail">
+              <h3>📅 Следующие праздники (за горизонтом текущего прогноза)</h3>
+              <p className="ai-hint">Увеличьте «Дней» в фильтре, чтобы захватить эти даты в прогнозе.</p>
+              <table className="ai-rank-table">
+                <tbody>
+                  {upcomingHolidays
+                    .filter(h => !(forecast.holidays || []).find(fh => fh.date === h.date))
+                    .map(h => (
+                      <tr key={h.date}>
+                        <td><code>{h.date}</code></td>
+                        <td>{h.icon} {h.name}</td>
+                        <td className="num">×{h.demandMultiplier.toFixed(2)} demand · ×{h.priceMultiplier.toFixed(2)} price</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </section>
+          )}
 
           <div className="ai-forecast-recommend">
             💡 {forecast.summary.recommendation}
@@ -792,38 +931,105 @@ export function DynamicPricingTab({ products }) {
     userTier: 'standard'
   });
   const [result, setResult] = useState(null);
+  const [context, setContext] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [autoFromProduct, setAutoFromProduct] = useState(true);
 
-  const recalc = async () => {
-    const { data } = await aiAPI.calculatePrice({
-      productId: calc.productId,
-      basePrice: calc.basePrice,
-      context: {
-        demand: calc.demand,
-        inventory: calc.inventory,
-        userTier: calc.userTier
-      }
-    });
-    setResult(data);
+  const loadContext = async (productId) => {
+    try {
+      const { data } = await aiAPI.getPricingContext(productId);
+      setContext(data);
+      return data;
+    } catch {
+      setContext(null);
+      return null;
+    }
   };
 
-  useEffect(() => { recalc(); /* eslint-disable-next-line */ }, []);
+  const recalc = async (overrides = {}) => {
+    setLoading(true);
+    try {
+      const params = { ...calc, ...overrides };
+      const { data } = await aiAPI.calculatePrice({
+        productId: params.productId,
+        basePrice: params.basePrice,
+        context: {
+          demand: params.demand,
+          inventory: params.inventory,
+          userTier: params.userTier
+        }
+      });
+      setResult(data);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // При смене товара — подгружаем реальный контекст (остаток+спрос)
+  useEffect(() => {
+    (async () => {
+      const ctx = await loadContext(calc.productId);
+      if (ctx && autoFromProduct) {
+        const next = {
+          ...calc,
+          basePrice: ctx.basePrice ?? calc.basePrice,
+          demand: ctx.demand,
+          inventory: ctx.inventory
+        };
+        setCalc(next);
+        await recalc(next);
+      } else {
+        await recalc();
+      }
+    })();
+    /* eslint-disable-next-line */
+  }, [calc.productId]);
+
+  const handleProductChange = (id) => {
+    const p = products.find(x => x.id === id);
+    setCalc(prev => ({
+      ...prev,
+      productId: id,
+      basePrice: p?.price ?? prev.basePrice
+    }));
+  };
+
+  const handleAutoFill = async () => {
+    setAutoFromProduct(true);
+    const ctx = await loadContext(calc.productId);
+    if (ctx) {
+      const next = {
+        ...calc,
+        basePrice: ctx.basePrice ?? calc.basePrice,
+        demand: ctx.demand,
+        inventory: ctx.inventory
+      };
+      setCalc(next);
+      await recalc(next);
+    }
+  };
 
   return (
     <div className="ai-pricing-tab">
       <div className="ai-pricing-form">
         <h3>💰 Калькулятор динамической цены</h3>
         <label>Товар:
-          <select value={calc.productId} onChange={e => {
-            const p = products.find(x => x.id === parseInt(e.target.value));
-            setCalc({ ...calc, productId: parseInt(e.target.value), basePrice: p?.price || calc.basePrice });
-          }}>
+          <select value={calc.productId} onChange={e => handleProductChange(parseInt(e.target.value))}>
             {products.slice(0, 30).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </label>
-        <label>Базовая цена: <input type="number" value={calc.basePrice} onChange={e => setCalc({ ...calc, basePrice: parseFloat(e.target.value) })} /> ₽</label>
-        <label>Спрос (0-100): <input type="range" min="0" max="100" value={calc.demand} onChange={e => setCalc({ ...calc, demand: parseInt(e.target.value) })} /> <strong>{calc.demand}</strong></label>
-        <label>Запас (шт): <input type="number" value={calc.inventory} onChange={e => setCalc({ ...calc, inventory: parseInt(e.target.value) })} /></label>
-        <label>Tier:
+
+        <button type="button" onClick={handleAutoFill} className="btn-secondary" style={{ marginTop: '-.25rem' }}>
+          🔄 Подставить реальные данные товара
+        </button>
+
+        <label>Базовая цена: <input type="number" value={calc.basePrice} onChange={e => { setAutoFromProduct(false); setCalc({ ...calc, basePrice: parseFloat(e.target.value) }); }} /> ₽</label>
+        <label>Спрос (0-100):
+          <input type="range" min="0" max="100" value={calc.demand} onChange={e => { setAutoFromProduct(false); setCalc({ ...calc, demand: parseInt(e.target.value) }); }} />
+          <strong>{calc.demand}</strong>
+        </label>
+        <label>Запас (шт): <input type="number" value={calc.inventory} onChange={e => { setAutoFromProduct(false); setCalc({ ...calc, inventory: parseInt(e.target.value) }); }} /></label>
+        <label>Tier клиента:
           <select value={calc.userTier} onChange={e => setCalc({ ...calc, userTier: e.target.value })}>
             <option value="standard">standard</option>
             <option value="silver">silver (-5%)</option>
@@ -832,7 +1038,20 @@ export function DynamicPricingTab({ products }) {
             <option value="vip">vip (-15%)</option>
           </select>
         </label>
-        <button onClick={recalc} className="btn-primary">Пересчитать</button>
+        <button onClick={() => recalc()} className="btn-primary" disabled={loading}>
+          {loading ? 'Считаем…' : 'Пересчитать'}
+        </button>
+
+        {context && (
+          <div className="ai-pricing-context">
+            <strong>📊 Откуда берутся цифры:</strong>
+            <ul>
+              <li><b>Остаток:</b> {context.inventorySource}</li>
+              <li><b>Спрос:</b> {context.demandSource}</li>
+              <li><b>История:</b> {context.historyDays} дней продаж</li>
+            </ul>
+          </div>
+        )}
       </div>
 
       {result && (
@@ -846,21 +1065,59 @@ export function DynamicPricingTab({ products }) {
             <div className={`ai-price-final ${result.dynamicPrice < result.basePrice ? 'down' : result.dynamicPrice > result.basePrice ? 'up' : 'flat'}`}>
               <span>AI-цена</span>
               <strong>{result.dynamicPrice} ₽</strong>
-              {result.discount > 0 && <span className="discount-badge">−{result.discount}%</span>}
+              {result.discount > 0  && <span className="discount-badge">−{result.discount}%</span>}
+              {result.surcharge > 0 && <span className="discount-badge surcharge">+{result.surcharge}%</span>}
             </div>
           </div>
+
           <div className="ai-price-reason">💡 {result.reason}</div>
-          <div className="ai-pricing-factors">
-            <h4>Множители (% от базы)</h4>
-            <table>
-              <tbody>
-                {Object.entries(result.factors).map(([k, v]) => (
-                  <tr key={k}><td>{k}</td><td className={v > 100 ? 'up' : v < 100 ? 'down' : ''}>{v}%</td></tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="ai-hint">Действует до {new Date(result.validUntil).toLocaleString()}</p>
+
+          {result.capping?.applied && (
+            <div className="ai-pricing-cap-warning">
+              ⚠️ Композиция факторов дала <code>{result.capping.rawPrice} ₽</code>,
+              но цена ограничена окном [{result.capping.floor}–{result.capping.ceiling}] ₽
+              (политика ±30% от базы).
+            </div>
+          )}
+
+          {result.breakdown && (
+            <div className="ai-pricing-steps">
+              <h4>🔬 Как считается под капотом — пошагово</h4>
+              <p className="ai-pricing-formula-line">
+                AI-цена = base × demand × inventory × seasonal × tier × time × weekend × competition
+              </p>
+              <table className="ai-pricing-steps-table">
+                <thead>
+                  <tr>
+                    <th>Фактор</th>
+                    <th>Вход</th>
+                    <th>Что значит</th>
+                    <th className="num">×</th>
+                    <th className="num">До</th>
+                    <th className="num">После</th>
+                    <th className="num">Δ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.breakdown.map(s => (
+                    <tr key={s.key} className={s.multiplier > 1 ? 'mul-up' : s.multiplier < 1 ? 'mul-down' : ''}>
+                      <td><span className="step-icon">{s.icon}</span> <strong>{s.title}</strong></td>
+                      <td><code>{s.input}</code></td>
+                      <td className="step-label">{s.label}<br/><span className="step-formula">{s.formula}</span></td>
+                      <td className="num">{s.multiplier.toFixed(2)}</td>
+                      <td className="num">{s.priceBefore} ₽</td>
+                      <td className="num"><strong>{s.priceAfter} ₽</strong></td>
+                      <td className={`num ${s.delta > 0 ? 'up' : s.delta < 0 ? 'down' : ''}`}>
+                        {s.delta > 0 ? `+${s.delta}` : s.delta} ₽
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <p className="ai-hint">Цена действует до {new Date(result.validUntil).toLocaleString('ru-RU')}.</p>
         </div>
       )}
     </div>
@@ -944,6 +1201,7 @@ export function InventoryAITab() {
 export function OrderQueueTab() {
   const [queue, setQueue] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const load = async () => {
     setLoading(true);
@@ -953,7 +1211,11 @@ export function OrderQueueTab() {
     } finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [refreshKey]);
+  useEffect(() => {
+    const t = setInterval(() => setRefreshKey(k => k + 1), 5000);
+    return () => clearInterval(t);
+  }, []);
 
   if (loading) return <div className="ai-loading">Загрузка очереди…</div>;
 
@@ -970,10 +1232,13 @@ export function OrderQueueTab() {
     <div className="ai-queue-tab">
       <div className="ai-section-title">
         <h2>⚡ Очередь заказов с AI-приоритизацией</h2>
-        <button onClick={load} className="btn-link">↻ Обновить</button>
+        <button onClick={() => setRefreshKey(k => k + 1)} className="btn-link">↻ Обновить</button>
       </div>
       <p className="ai-hint">
         priority = 0.30·loyalty + 0.20·amount + 0.15·digital + 0.20·waittime − 0.30·risk
+      </p>
+      <p className="ai-hint ai-hint-info">
+        💡 Подсказка: эффект суммы виден лучше, если один заказ ~100–300₽, а второй ~2000–5000₽. Также приоритет растёт с ожиданием (waittime).
       </p>
 
       <table className="ai-queue-table">
@@ -987,6 +1252,7 @@ export function OrderQueueTab() {
             <th>Risk</th>
             <th>Возраст</th>
             <th>Причины</th>
+            <th>Компоненты</th>
             <th>Status</th>
           </tr>
         </thead>
@@ -1008,6 +1274,11 @@ export function OrderQueueTab() {
                 <ul className="reasons-list">
                   {(o.priorityReasons || []).map((r, i) => <li key={i}>{r}</li>)}
                 </ul>
+              </td>
+              <td className="priority-components-cell">
+                {o.priorityComponents
+                  ? `loy=${o.priorityComponents.loyalty} amt=${o.priorityComponents.amount} dig=${o.priorityComponents.digital} wait=${o.priorityComponents.waittime} risk=${o.priorityComponents.risk}`
+                  : '—'}
               </td>
               <td><span className="status-tag">{o.status}</span></td>
             </tr>

@@ -28,6 +28,7 @@ function App() {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [theme, setTheme] = useState('dark');
 
   useEffect(() => {
     fetchData();
@@ -35,7 +36,22 @@ function App() {
     if (savedUser) setUser(JSON.parse(savedUser));
     const savedCart = localStorage.getItem('cart');
     if (savedCart) setCart(JSON.parse(savedCart));
+
+    // Theme
+    try {
+      const savedTheme = localStorage.getItem('theme');
+      const initial = savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : 'dark';
+      setTheme(initial);
+      document.documentElement.dataset.theme = initial;
+    } catch {
+      document.documentElement.dataset.theme = 'dark';
+    }
   }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem('theme', theme); } catch { /* ignore */ }
+  }, [theme]);
 
   const fetchData = async () => {
     try {
@@ -503,12 +519,14 @@ function App() {
           cartCount={cart.length}
           onLogout={handleLogout}
           products={products}
+          theme={theme}
+          onToggleTheme={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))}
         />
         
         <Routes>
           <Route path="/" element={
             <main className="main-content">
-              <Hero />
+              <Hero user={user} />
               <PersonalizedHome
                 products={products}
                 user={user}
@@ -541,6 +559,7 @@ function App() {
           <Route path="/product/:id" element={
             <ProductDetail 
               products={products} 
+              user={user}
               onAddToCart={addToCart}
             />
           } />
@@ -597,7 +616,7 @@ function App() {
           } />
         </Routes>
 
-        <Chatbot />
+        <Chatbot user={user} />
         <Footer />
       </div>
     </Router>
